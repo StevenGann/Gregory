@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.venv
+venv
+env
+
+# IDE / Editor
+.idea
+.vscode
+*.swp
+*.swo
+
+# Tests
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# Notes (do not bake in; use volume)
+notes/
+
+# Docs
+*.md
+!README.md

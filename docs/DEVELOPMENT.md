@@ -1,0 +1,100 @@
+# Development
+
+## Setup
+
+1. Clone the repository and create a virtual environment:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+```
+
+2. Install in editable mode with dev dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+3. Copy `.env.example` to `.env` and configure `OLLAMA_BASE_URL`, `NOTES_PATH`, `FAMILY_MEMBERS`.
+
+## Running Locally
+
+```bash
+uvicorn gregory.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+- API: http://localhost:8000
+- Interactive docs: http://localhost:8000/docs
+
+## Code Structure
+
+```mermaid
+flowchart TD
+    main[main.py]
+    config[config.py]
+    store[store.py]
+
+    api[api/]
+    api_routes[api/routes/]
+    api_schemas[api/schemas.py]
+
+    ai[ai/]
+    ai_providers[ai/providers/]
+    ai_router[ai/router.py]
+    ai_prompts[ai/prompts.py]
+
+    notes[notes/]
+    notes_service[notes/service.py]
+    notes_loader[notes/loader.py]
+
+    main --> api
+    main --> config
+
+    api --> api_routes
+    api --> api_schemas
+
+    api_routes --> health[health.py]
+    api_routes --> users[users.py]
+    api_routes --> chat[chat.py]
+
+    chat --> ai
+    chat --> notes
+    chat --> store
+
+    ai --> ai_router
+    ai --> ai_prompts
+    ai --> ai_providers
+
+    ai_providers --> base[base.py]
+    ai_providers --> ollama[ollama.py]
+```
+
+## Module Responsibilities
+
+| Module | Responsibility |
+|--------|----------------|
+| `main.py` | FastAPI app, CORS, route mounting |
+| `config.py` | Pydantic settings from environment |
+| `store.py` | In-memory conversation history per user |
+| `api/routes/` | HTTP handlers |
+| `api/schemas.py` | Request/response Pydantic models |
+| `ai/router.py` | Provider selection |
+| `ai/providers/` | Ollama, future: Claude, Gemini |
+| `ai/prompts.py` | System prompt construction |
+| `notes/service.py` | Read/write Markdown notes |
+| `notes/loader.py` | Load notes as chat context |
+
+## Testing
+
+With dev dependencies installed:
+
+```bash
+pytest
+```
+
+## Adding a New AI Provider
+
+1. Add a class in `ai/providers/` that extends `AIProvider`.
+2. Implement `async def generate(prompt, history, system_context) -> str`.
+3. Update `ai/router.py` to return the new provider based on config.
+4. Add corresponding environment variables in `config.py`.
