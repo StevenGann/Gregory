@@ -1,0 +1,61 @@
+"""Ollama AI provider."""
+
+import logging
+from typing import Any
+
+import httpx
+
+from gregory.ai.providers.base import AIProvider, ChatMessage
+from gregory.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+OLLAMA_MODEL = "llama3.2"
+OLLAMA_TIMEOUT = 120.0
+
+
+class OllamaProvider(AIProvider):
+    """Ollama provider using REST API."""
+
+    def __init__(self, base_url: str | None = None, model: str = OLLAMA_MODEL) -> None:
+        settings = get_settings()
+        self._base_url = (base_url or settings.ollama_base_url or "").rstrip("/")
+        self._model = model
+
+    async def generate(
+        self,
+        prompt: str,
+        history: list[ChatMessage],
+        system_context: str = "",
+    ) -> str:
+        """Generate response via Ollama chat API."""
+        messages: list[dict[str, str]] = []
+
+        if system_context:
+            messages.append({"role": "system", "content": system_context})
+
+        for m in history:
+            messages.append({"role": m.role, "content": m.content})
+        messages.append({"role": "user", "content": prompt})
+
+        body: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "stream": False,
+        }
+
+        url = f"{self._base_url}/api/chat"
+        async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
+            try:
+                r = await client.post(url, json=body)
+                r.raise_for_status()
+                data = r.json()
+                msg = data.get("message", {})
+                content = msg.get("content", "")
+                return content.strip() if isinstance(content, str) else ""
+            except httpx.HTTPError as e:
+                logger.error("Ollama request failed: %s", e)
+                raise
+            except Exception as e:
+                logger.error("Ollama error: %s", e)
+                raise

@@ -1,0 +1,27 @@
+# Gregory - Smart House AI
+# Deploy to home server or Raspberry Pi via Docker
+
+services:
+  gregory:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - NOTES_PATH=/app/notes
+      - FAMILY_MEMBERS=${FAMILY_MEMBERS:-}
+    volumes:
+      - notes:/app/notes
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  notes:
