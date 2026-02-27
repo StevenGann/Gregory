@@ -30,12 +30,13 @@ COPY --from=builder /build/dist/*.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl \
     && rm /tmp/*.whl
 
-# Notes directory (mount a volume here)
-RUN mkdir -p /app/notes && chown -R gregory:gregory /app
+# Notes and memory directories (mount volumes here)
+RUN mkdir -p /app/notes /app/memory && chown -R gregory:gregory /app
 
 USER gregory
 
 ENV NOTES_PATH=/app/notes
+ENV MEMORY_PATH=/app/memory
 EXPOSE 8000
 
 CMD ["uvicorn", "gregory.main:app", "--host", "0.0.0.0", "--port", "8000"]

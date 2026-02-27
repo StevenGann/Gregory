@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from gregory.api.routes import chat, health, users
+from gregory.api.routes import chat, health, memory, users
 from gregory.config import get_settings
 
 settings = get_settings()
@@ -26,9 +26,16 @@ async def lifespan(app: FastAPI):
 
     reflection_m = getattr(settings, "heartbeat_reflection_minutes", 0) or 0
     cleanup_m = getattr(settings, "heartbeat_notes_cleanup_minutes", 0) or 0
-    if reflection_m > 0 or cleanup_m > 0:
+    summary_m = getattr(settings, "heartbeat_daily_summary_minutes", 0) or 0
+    compression_m = getattr(settings, "heartbeat_memory_compression_minutes", 0) or 0
+    if reflection_m > 0 or cleanup_m > 0 or summary_m > 0 or compression_m > 0:
         from gregory.heartbeat import run_heartbeat
         asyncio.create_task(run_heartbeat())
+
+    if getattr(settings, "memory_enabled", False):
+        from gregory.memory.service import startup_reindex
+        asyncio.create_task(startup_reindex(), name="memory-reindex")
+        logger.info("[startup] Memory system enabled; reindexing journal files in background")
 
     yield
 
@@ -58,6 +65,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(users.router)
 app.include_router(chat.router)
+app.include_router(memory.router)
 
 
 @app.get("/")

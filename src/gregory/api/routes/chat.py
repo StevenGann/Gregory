@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from gregory.ai import get_provider
 from gregory.ai.router import get_providers_for_message
-from gregory.ai.observations import extract_observations
+from gregory.ai.observations import extract_memory_markers, extract_observations
 from gregory.ai.prompts import build_system_prompt
 from gregory.api.schemas import ChatRequest, ChatResponse
 from gregory.config import get_settings
@@ -51,10 +51,27 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
 
     settings = get_settings()
     notes_context = load_notes_for_chat(user_id)
+
+    # Memory retrieval: vector-search for relevant past journal entries
+    memory_context = ""
+    if settings.memory_enabled:
+        from gregory.memory.loader import load_memory_for_chat
+        from gregory.memory.service import get_vector_store
+        try:
+            memory_context = await load_memory_for_chat(
+                user_id=user_id,
+                message=body.message,
+                vector_store=get_vector_store(),
+            )
+        except Exception as e:
+            logger.warning("[chat] Memory retrieval failed: %s", e)
+
     system_prompt = build_system_prompt(
         notes_context,
         observations_enabled=settings.observations_enabled,
         user_id=user_id,
+        memory_context=memory_context,
+        memory_enabled=settings.memory_enabled,
     )
 
     history = get_history(user_id)
@@ -89,6 +106,34 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         logger.exception("All providers failed. Last error: %s", last_error)
         raise HTTPException(status_code=502, detail="All AI providers failed") from last_error
 
+    # Extract memory markers ([JOURNAL:] and [MEMORY_SEARCH:]) FIRST
+    if settings.memory_enabled:
+        from gregory.ai.observations import extract_memory_markers
+        from gregory.memory.loader import set_pending_memory_results
+        from gregory.memory.service import get_vector_store, write_journal_entry
+
+        response_text, journal_entries, memory_searches = extract_memory_markers(response_text)
+
+        for entry in journal_entries:
+            try:
+                await write_journal_entry(entry.content, user_id=user_id)
+                logger.info("[chat] Journal entry written: %s", entry.content[:60])
+            except Exception as e:
+                logger.warning("[chat] Failed to write journal entry: %s", e)
+
+        if memory_searches:
+            vector_store = get_vector_store()
+            all_results: list[dict] = []
+            for req in memory_searches:
+                try:
+                    results = await vector_store.search(req.query, n_results=5, threshold=0.0)
+                    all_results.extend(results)
+                except Exception as e:
+                    logger.warning("[chat] Memory search failed for %r: %s", req.query, e)
+            if all_results:
+                set_pending_memory_results(user_id, all_results)
+                logger.info("[chat] Stored %d memory search results for next turn", len(all_results))
+
     # Extract observations and append to notes if enabled
     cleaned_response = response_text
     if settings.observations_enabled:
@@ -111,7 +156,7 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                 notes_svc.append_entity(obs.target, line)
                 logger.info("Appended entity note for %s: %s", obs.target, obs.content[:50])
 
-    # Persist to history (store cleaned response without observation blocks)
+    # Persist to history (store cleaned response without observation/memory blocks)
     append(user_id, "user", body.message)
     append(user_id, "assistant", cleaned_response)
 

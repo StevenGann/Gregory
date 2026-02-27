@@ -61,7 +61,13 @@ When not running in Docker, copy `config.json.example` to `config.json` and edit
   "ollama_ensure_models": false,
   "system_prompt": null,
   "notes_path": "./notes",
-  "family_members": "alice,bob,kids"
+  "family_members": "alice,bob,kids",
+  "memory_enabled": false,
+  "memory_path": "./memory",
+  "memory_similarity_threshold": 0.7,
+  "memory_top_k": 3,
+  "memory_embedding_provider": "default",
+  "memory_embedding_model": "nomic-embed-text"
 }
 ```
 
@@ -163,6 +169,36 @@ flowchart TB
 ```
 
 See [AI System](AI_SYSTEM.md) for a detailed explanation of model routing and provider fallback.
+
+### Memory
+
+Gregory's memory system stores daily journal files and a vector database for semantic retrieval. It is separate from the static notes system. See [MEMORY.md](MEMORY.md) for a full explanation.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MEMORY_ENABLED` | No | `false` | Master switch. When `false`, no journal files are written and no vector search runs |
+| `MEMORY_PATH` | No | `/app/memory` | Directory for journal `.md` files and the ChromaDB data folder |
+| `MEMORY_SIMILARITY_THRESHOLD` | No | `0.7` | Minimum cosine similarity (0–1) for a memory hit to be injected into chat context |
+| `MEMORY_TOP_K` | No | `3` | Maximum number of memory hits injected per chat turn |
+| `MEMORY_EMBEDDING_PROVIDER` | No | `default` | Embedding backend: `default` (onnxruntime, all-MiniLM-L6-v2) or `ollama` |
+| `MEMORY_EMBEDDING_MODEL` | No | `nomic-embed-text` | Embedding model name when `MEMORY_EMBEDDING_PROVIDER=ollama` |
+| `HEARTBEAT_DAILY_SUMMARY_MINUTES` | No | `0` | Interval (minutes) to summarize today's journal. 0=disabled |
+| `HEARTBEAT_MEMORY_COMPRESSION_MINUTES` | No | `0` | Interval (minutes) to compress past months into `YYYY-MM.md`. 0=disabled |
+
+**Quick start (onnxruntime embeddings):**
+```bash
+MEMORY_ENABLED=true
+MEMORY_PATH=/app/memory
+```
+
+**With Ollama embeddings:**
+```bash
+MEMORY_ENABLED=true
+MEMORY_PATH=/app/memory
+MEMORY_EMBEDDING_PROVIDER=ollama
+MEMORY_EMBEDDING_MODEL=nomic-embed-text
+# OLLAMA_BASE_URL must also be set
+```
 
 ### Heartbeat
 

@@ -1,11 +1,10 @@
-/src/gregory/__pycache__
-/src/gregory/ai/__pycache__
-/src/gregory/ai/providers/__pycache__
-/src/gregory/api/__pycache__
-/src/gregory/api/routes/__pycache__
-/src/gregory/notes/__pycache__
+# Python bytecode
+**/__pycache__
+**/*.pyc
+**/*.pyo
 
 # Local config (contains secrets / local URLs)
 config.json
 .env
 /notes
+/memory
