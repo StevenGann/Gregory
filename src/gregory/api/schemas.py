@@ -27,3 +27,4 @@ class HealthResponse(BaseModel):
 
     status: str = "ok"
     ollama_configured: bool = False
+    ai_provider: str | None = None

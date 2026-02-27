@@ -35,7 +35,7 @@ flowchart TB
 - **HTTP API** — Chat with Gregory via REST; future apps can use this for voice, web, and more
 - **User-scoped chat** — Each family member has a dedicated conversation and notes
 - **Notes** — Gregory maintains Markdown notes per user and for the household
-- **AI backends** — Ollama (on-prem); Claude and Gemini planned for Phase 2
+- **AI backends** — Ollama (on-prem), Claude (Anthropic), Gemini (Google)
 - **Docker deployment** — Run on home server, Raspberry Pi, or anywhere
 
 ## Quick Start
@@ -150,11 +150,16 @@ volumes:
 | Variable | Purpose |
 |----------|---------|
 | `OLLAMA_BASE_URL` | Ollama server URL (e.g. `http://192.168.1.x:11434`) |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
+| `GEMINI_API_KEY` | Google API key for Gemini |
+| `AI_PROVIDER` | Preferred provider: `claude`, `gemini`, or `ollama` |
+| `OLLAMA_MODEL` | Ollama model (default: `llama3.2`) |
+| `OBSERVATIONS_ENABLED` | Let Gregory append learned facts to notes |
 | `NOTES_PATH` | Path to notes directory |
 | `FAMILY_MEMBERS` | Comma-separated user IDs |
 | `LOG_LEVEL` | DEBUG, INFO, WARNING, ERROR |
 
-**Local (non-Docker):** Copy `config.json.example` to `config.json` and edit. JSON config is loaded automatically when the file exists.
+**Local (non-Docker):** Copy `config.json.example` to `config.json` and edit. Use `.env` for API keys.
 
 **Docker:** Use `.env` or environment variables in `docker-compose.yml`.
 

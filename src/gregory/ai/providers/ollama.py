@@ -10,17 +10,16 @@ from gregory.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_MODEL = "llama3.2"
 OLLAMA_TIMEOUT = 120.0
 
 
 class OllamaProvider(AIProvider):
     """Ollama provider using REST API."""
 
-    def __init__(self, base_url: str | None = None, model: str = OLLAMA_MODEL) -> None:
+    def __init__(self, base_url: str | None = None, model: str | None = None) -> None:
         settings = get_settings()
         self._base_url = (base_url or settings.ollama_base_url or "").rstrip("/")
-        self._model = model
+        self._model = model or settings.ollama_model
 
     async def generate(
         self,

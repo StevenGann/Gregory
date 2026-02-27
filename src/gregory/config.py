@@ -34,6 +34,42 @@ class Settings(BaseSettings):
         default=None,
         description="Ollama server URL (e.g. http://192.168.1.x:11434)",
     )
+    ollama_model: str = Field(
+        default="llama3.2",
+        description="Ollama model name (e.g. llama3.2, mistral)",
+    )
+
+    # Claude (Anthropic)
+    anthropic_api_key: str | None = Field(
+        default=None,
+        description="Anthropic API key for Claude",
+    )
+    claude_model: str = Field(
+        default="claude-3-5-sonnet-20241022",
+        description="Claude model identifier",
+    )
+
+    # Gemini (Google)
+    gemini_api_key: str | None = Field(
+        default=None,
+        description="Google API key for Gemini",
+    )
+    gemini_model: str = Field(
+        default="gemini-1.5-flash",
+        description="Gemini model identifier",
+    )
+
+    # Provider selection (claude | gemini | ollama; if unset, first available wins)
+    ai_provider: str | None = Field(
+        default=None,
+        description="Preferred AI provider: claude, gemini, or ollama",
+    )
+
+    # Notes observations (Gregory writes learned facts back to notes)
+    observations_enabled: bool = Field(
+        default=False,
+        description="Enable AI to append observations to notes",
+    )
 
     # Notes
     notes_path: Path = Field(

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gregory"
-version = "0.1.0"
+version = "0.2.0"
 description = "Gregory - Smart House AI: HTTP API glue for AI backends, Home Assistant, and Jellyfin"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,6 +14,8 @@ dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "httpx>=0.27.0",
+    "anthropic>=0.39.0",
+    "google-generativeai>=0.8.0",
 ]
 
 [project.optional-dependencies]

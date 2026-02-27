@@ -15,7 +15,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-3. Copy `.env.example` to `.env` and configure `OLLAMA_BASE_URL`, `NOTES_PATH`, `FAMILY_MEMBERS`.
+3. Copy `.env.example` to `.env` and configure at least one AI provider (`OLLAMA_BASE_URL`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`), plus `NOTES_PATH`, `FAMILY_MEMBERS`.
 
 ## Running Locally
 
@@ -77,6 +77,10 @@ flowchart TD
 
     ai_providers --> base[base.py]
     ai_providers --> ollama[ollama.py]
+    ai_providers --> claude[claude.py]
+    ai_providers --> gemini[gemini.py]
+
+    ai --> ai_observations[observations.py]
 ```
 
 ## Module Responsibilities
@@ -88,9 +92,10 @@ flowchart TD
 | `store.py` | In-memory conversation history per user |
 | `api/routes/` | HTTP handlers |
 | `api/schemas.py` | Request/response Pydantic models |
-| `ai/router.py` | Provider selection |
-| `ai/providers/` | Ollama, future: Claude, Gemini |
+| `ai/router.py` | Provider selection (Claude, Gemini, Ollama) |
+| `ai/providers/` | `ollama.py`, `claude.py`, `gemini.py` |
 | `ai/prompts.py` | System prompt construction |
+| `ai/observations.py` | Extract `[OBSERVATION: ...]` from responses and append to notes |
 | `notes/service.py` | Read/write Markdown notes |
 | `notes/loader.py` | Load notes as chat context |
 

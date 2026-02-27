@@ -112,7 +112,7 @@ flowchart LR
 flowchart LR
     subgraph input [Input]
         Chat[Chat Message]
-        Observations[AI Observations - planned]
+        Observations[AI Observations]
     end
 
     subgraph notes_dir [notes/]
@@ -135,7 +135,7 @@ flowchart LR
     Observations -.-> notes_dir
 ```
 
-**Note:** The dotted line from AI to notes represents **planned** functionality: Gregory will eventually be able to append observations to notes as he learns. This is not yet implemented. See [ROADMAP.md](ROADMAP.md).
+**Note:** The dotted line from AI to notes is implemented when `OBSERVATIONS_ENABLED=true`. Gregory extracts `[OBSERVATION: ...]` blocks from responses and appends them to user notes. See [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Project Structure
 

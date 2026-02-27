@@ -1,6 +1,13 @@
 {
   "log_level": "INFO",
   "ollama_base_url": "http://localhost:11434",
+  "ollama_model": "llama3.2",
+  "anthropic_api_key": null,
+  "claude_model": "claude-3-5-sonnet-20241022",
+  "gemini_api_key": null,
+  "gemini_model": "gemini-1.5-flash",
+  "ai_provider": null,
+  "observations_enabled": false,
   "notes_path": "./notes",
   "family_members": "alice,bob,kids"
 }

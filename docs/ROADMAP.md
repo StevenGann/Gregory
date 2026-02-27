@@ -13,9 +13,9 @@ Gregory is in active development. This document outlines planned features and in
 
 ## Phase 2: AI & Notes
 
-- [ ] **AI provider expansion** — Add Claude and Gemini as optional backends
-- [ ] **Notes observations** — Gregory writes observations back to notes as he learns (see [ARCHITECTURE.md](ARCHITECTURE.md#data-flow-notes))
-- [ ] **Configurable model** — Allow choosing the Ollama model (e.g. `llama3.2`, `mistral`) via config
+- [x] **AI provider expansion** — Add Claude and Gemini as optional backends
+- [x] **Notes observations** — Gregory writes observations back to notes as he learns (enable with `OBSERVATIONS_ENABLED=true`; see [ARCHITECTURE.md](ARCHITECTURE.md#data-flow-notes))
+- [x] **Configurable model** — Allow choosing the Ollama model (e.g. `llama3.2`, `mistral`) via `OLLAMA_MODEL`
 
 ## Phase 3: Integrations
 

@@ -2,6 +2,16 @@
 
 Common issues and solutions when running Gregory.
 
+## Claude or Gemini not selected
+
+**Symptom:** You set `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` but Gregory uses Ollama (or vice versa).
+
+**Cause:** Provider priority is Claude > Gemini > Ollama when `AI_PROVIDER` is unset. If multiple are configured, the first in that order wins.
+
+**Fix:** Set `AI_PROVIDER=claude`, `AI_PROVIDER=gemini`, or `AI_PROVIDER=ollama` to force a specific provider.
+
+---
+
 ## 503: No AI provider configured
 
 **Symptom:** `POST /users/{id}/chat` returns 503 with "No AI provider configured. Set OLLAMA_BASE_URL."
@@ -26,7 +36,19 @@ Ensure Ollama is running and reachable from the Gregory container or host.
 1. **Ollama not running** — Start Ollama: `ollama serve` (or via your system service).
 2. **Wrong URL** — Verify `OLLAMA_BASE_URL` points to the correct host and port.
 3. **Network/firewall** — From Docker, `localhost` refers to the container, not the host. Use `host.docker.internal` (Docker Desktop) or the host's LAN IP.
-4. **Model missing** — Ensure the default model (`llama3.2`) is pulled: `ollama pull llama3.2`.
+4. **Model missing** — Ensure your `OLLAMA_MODEL` (default `llama3.2`) is pulled: `ollama pull llama3.2`.
+
+---
+
+## Claude or Gemini API errors
+
+**Symptom:** 502 with "AI provider error" when using Claude or Gemini.
+
+**Causes and fixes:**
+
+1. **Invalid API key** — Verify `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` is correct and has not expired. Get keys from [console.anthropic.com](https://console.anthropic.com) or [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+2. **Rate limits** — Claude and Gemini have usage limits; check your account status.
+3. **Model name** — Ensure `CLAUDE_MODEL` or `GEMINI_MODEL` matches a valid model identifier (e.g. `claude-3-5-sonnet-20241022`, `gemini-1.5-flash`).
 
 ---
 

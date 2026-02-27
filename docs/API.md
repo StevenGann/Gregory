@@ -31,13 +31,14 @@ Returns service info and links.
 
 **GET /health**
 
-Health check for Docker, load balancers, and monitoring. Indicates whether Ollama is configured.
+Health check for Docker, load balancers, and monitoring. Indicates which AI provider is active.
 
 **Response:**
 ```json
 {
   "status": "ok",
-  "ollama_configured": true
+  "ollama_configured": true,
+  "ai_provider": "ollama"
 }
 ```
 
@@ -45,6 +46,7 @@ Health check for Docker, load balancers, and monitoring. Indicates whether Ollam
 |-------|------|-------------|
 | status | string | Always `"ok"` when healthy |
 | ollama_configured | boolean | `true` if `OLLAMA_BASE_URL` is set |
+| ai_provider | string \| null | Active provider: `claude`, `gemini`, or `ollama`; `null` if none configured |
 
 ---
 
