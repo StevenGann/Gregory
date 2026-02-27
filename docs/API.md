@@ -16,6 +16,7 @@ flowchart TB
         Health["GET /health"]
         Users["GET /users"]
         Chat["POST /users/{user_id}/chat"]
+        MemSearch["GET /memory/search"]
     end
 
     subgraph responses [Typical Responses]
@@ -23,6 +24,7 @@ flowchart TB
         Health --> HealthResp[Status + ai_provider]
         Users --> UsersResp[user IDs array]
         Chat --> ChatResp[response + conversation_id]
+        MemSearch --> MemResp[results array with similarity scores]
     end
 ```
 
@@ -136,12 +138,64 @@ Send a message as the specified user and receive Gregory's response. Each user h
 
 ---
 
+### Memory Search
+
+**GET /memory/search**
+
+Search Gregory's memory journal using a natural language query. Requires `MEMORY_ENABLED=true`.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| q | string | required | Search query |
+| top_k | integer | `5` | Maximum number of results |
+
+**Response:**
+```json
+{
+  "query": "thermostat preferences",
+  "results": [
+    {
+      "text": "- [14:23 UTC | alice] Alice asked to set thermostat to 22°C",
+      "metadata": {
+        "date": "2026-02-27",
+        "user_id": "alice",
+        "type": "entry"
+      },
+      "similarity": 0.91
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| query | string | The query that was searched |
+| results | array | Matching memory entries, ordered by similarity (descending) |
+| results[].text | string | The journal entry text |
+| results[].metadata.date | string | ISO date of the entry (`YYYY-MM-DD`) |
+| results[].metadata.user_id | string | User who triggered the entry (empty for system entries) |
+| results[].metadata.type | string | `entry`, `summary`, or `compressed` |
+| results[].similarity | number | Cosine similarity (0–1); 1 = identical |
+
+**Error Responses:**
+
+| Status | Condition |
+|--------|-----------|
+| 503 | Memory system is disabled (`MEMORY_ENABLED=false`) |
+
+**Note:** This endpoint uses `threshold=0.0` so it always returns up to `top_k` results regardless of similarity, ordered by relevance. This is useful for inspection and debugging. The pre-chat auto-search uses `MEMORY_SIMILARITY_THRESHOLD` to filter low-confidence results.
+
+---
+
 ## Chat Request Flow
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant API as Chat API
+    participant ML as Memory Loader
     participant NL as Notes Loader
     participant S as Store
     participant R as Router
@@ -151,6 +205,10 @@ sequenceDiagram
     API->>R: get_providers_for_message(message)
     Note over R: Optional: model selector reorders providers
     R-->>API: ordered providers
+    opt memory_enabled
+        API->>ML: load_memory_for_chat(user_id, message)
+        ML-->>API: memory context (similar past entries)
+    end
     API->>NL: load_notes_for_chat(user_id)
     NL-->>API: notes context
     API->>S: get_history(user_id)
@@ -164,6 +222,10 @@ sequenceDiagram
         end
     end
     API->>API: extract observations (if enabled)
+    opt memory_enabled
+        API->>API: extract [JOURNAL:] and [MEMORY_SEARCH:] markers
+        API->>ML: write journal entries + queue search results
+    end
     API->>S: append to history
     API-->>C: ChatResponse
 ```

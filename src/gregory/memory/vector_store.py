@@ -132,13 +132,17 @@ class MemoryVectorStore:
         self._ensure_client()
         prefix = f"{year:04d}-{month:02d}-"
         try:
-            # ChromaDB where filter: delete all entries whose date starts with YYYY-MM-
-            existing = self._collection.get(
-                where={"date": {"$gte": f"{year:04d}-{month:02d}-01",
-                                "$lte": f"{year:04d}-{month:02d}-31"}},
-                include=[],
-            )
-            ids_to_delete = existing.get("ids", [])
+            # Fetch all entries with their metadata, then filter by date prefix in Python.
+            # ChromaDB's compound where-filter support varies across versions, so we avoid
+            # relying on range operators and do the filtering ourselves.
+            existing = self._collection.get(include=["metadatas"])
+            ids_to_delete = [
+                id_
+                for id_, meta in zip(
+                    existing.get("ids", []), existing.get("metadatas", [])
+                )
+                if (meta or {}).get("date", "").startswith(prefix)
+            ]
             if ids_to_delete:
                 self._collection.delete(ids=ids_to_delete)
                 logger.info(
