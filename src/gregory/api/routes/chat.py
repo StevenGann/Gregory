@@ -4,7 +4,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from gregory.ai import get_provider
+from gregory.ai import get_provider, get_providers_ordered
 from gregory.ai.observations import extract_observations
 from gregory.ai.prompts import build_system_prompt
 from gregory.api.schemas import ChatRequest, ChatResponse
@@ -36,8 +36,8 @@ def _provider_hint() -> str:
 @router.post("/{user_id}/chat", response_model=ChatResponse)
 async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
     """Send a message as the given user and receive Gregory's response."""
-    provider = get_provider()
-    if not provider:
+    providers = get_providers_ordered()
+    if not providers:
         raise HTTPException(
             status_code=503,
             detail=f"No AI provider configured. {_provider_hint()}",
@@ -56,15 +56,25 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
 
     history = get_history(user_id)
 
-    try:
-        response_text = await provider.generate(
-            prompt=body.message,
-            history=history,
-            system_context=system_prompt,
-        )
-    except Exception as e:
-        logger.exception("AI generate failed: %s", e)
-        raise HTTPException(status_code=502, detail="AI provider error") from e
+    response_text = None
+    last_error: Exception | None = None
+    for name, provider in providers:
+        try:
+            response_text = await provider.generate(
+                prompt=body.message,
+                history=history,
+                system_context=system_prompt,
+            )
+            if name != providers[0][0]:
+                logger.info("Primary provider failed; succeeded with fallback: %s", name)
+            break
+        except Exception as e:
+            logger.warning("Provider %s failed: %s", name, e)
+            last_error = e
+
+    if response_text is None:
+        logger.exception("All providers failed. Last error: %s", last_error)
+        raise HTTPException(status_code=502, detail="All AI providers failed") from last_error
 
     # Extract observations and append to notes if enabled
     cleaned_response = response_text
