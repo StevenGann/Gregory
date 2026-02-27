@@ -1,0 +1,6 @@
+{
+  "log_level": "INFO",
+  "ollama_base_url": "http://localhost:11434",
+  "notes_path": "./notes",
+  "family_members": "alice,bob,kids"
+}

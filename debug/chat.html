@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gregory Chat Debug</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+    h1 { font-size: 1.25rem; margin-bottom: 1rem; }
+    .config {
+      background: #f5f5f5;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    .config label { display: block; margin-bottom: 0.25rem; font-weight: 500; }
+    .config input { width: 100%; padding: 0.5rem; margin-bottom: 0.75rem; }
+    .chat { display: flex; flex-direction: column; gap: 0.5rem; }
+    .messages {
+      min-height: 200px;
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 1rem;
+      background: #fafafa;
+    }
+    .msg { margin-bottom: 0.75rem; }
+    .msg.user { color: #0066cc; }
+    .msg.assistant { color: #22863a; }
+    .msg .role { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; margin-bottom: 0.25rem; }
+    .msg .content { white-space: pre-wrap; word-break: break-word; }
+    .msg.error { color: #cb2431; }
+    .input-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .input-row input[type="text"] { flex: 1; padding: 0.5rem; }
+    .input-row button {
+      padding: 0.5rem 1rem;
+      background: #0066cc;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .input-row button:hover { background: #0052a3; }
+    .input-row button:disabled { opacity: 0.6; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h1>Gregory Chat Debug</h1>
+  <p>Static interface for testing Gregory&apos;s chat API. Serve this file via HTTP (e.g. <code>python -m http.server 8080</code>) to avoid CORS issues, or run Gregory with CORS allowing your origin.</p>
+
+  <div class="config">
+    <label for="baseUrl">API base URL</label>
+    <input type="text" id="baseUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
+    <label for="userId">User ID</label>
+    <input type="text" id="userId" value="alice" placeholder="alice">
+  </div>
+
+  <div class="chat">
+    <div class="messages" id="messages"></div>
+    <div class="input-row">
+      <input type="text" id="message" placeholder="Type a message..." autocomplete="off">
+      <button id="send">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const baseUrlEl = document.getElementById('baseUrl');
+    const userIdEl = document.getElementById('userId');
+    const messageEl = document.getElementById('message');
+    const sendBtn = document.getElementById('send');
+    const messagesEl = document.getElementById('messages');
+
+    function addMsg(role, content, isError = false) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role + (isError ? ' error' : '');
+      div.innerHTML = '<span class="role">' + (isError ? 'Error' : role) + '</span><div class="content">' + escapeHtml(content) + '</div>';
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    async function send() {
+      const baseUrl = baseUrlEl.value.replace(/\/$/, '');
+      const userId = userIdEl.value.trim();
+      const message = messageEl.value.trim();
+      if (!message || !userId) return;
+
+      addMsg('user', message);
+      messageEl.value = '';
+      sendBtn.disabled = true;
+
+      try {
+        const res = await fetch(`${baseUrl}/users/${encodeURIComponent(userId)}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          addMsg('assistant', (data.detail || res.statusText || 'Request failed'), true);
+        } else {
+          addMsg('assistant', data.response || '');
+        }
+      } catch (e) {
+        addMsg('assistant', 'Network error: ' + e.message, true);
+      }
+      sendBtn.disabled = false;
+    }
+
+    sendBtn.addEventListener('click', send);
+    messageEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  </script>
+</body>
+</html>

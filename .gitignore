@@ -4,3 +4,7 @@
 /src/gregory/api/__pycache__
 /src/gregory/api/routes/__pycache__
 /src/gregory/notes/__pycache__
+
+# Local config (contains secrets / local URLs)
+config.json
+.env

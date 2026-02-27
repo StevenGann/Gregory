@@ -24,6 +24,16 @@ uvicorn gregory.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 - API: http://localhost:8000
+
+## Debug Chat UI
+
+A minimal static HTML chat interface for testing the API is in `debug/chat.html`. Serve it via HTTP to avoid CORS:
+
+```bash
+cd debug && python -m http.server 8080
+```
+
+Open http://localhost:8080/chat.html, set the API base URL and user ID, then send messages.
 - Interactive docs: http://localhost:8000/docs
 
 ## Code Structure
@@ -86,11 +96,13 @@ flowchart TD
 
 ## Testing
 
-With dev dependencies installed:
+Dev dependencies include `pytest` and `pytest-asyncio`. Run:
 
 ```bash
 pytest
 ```
+
+**Note:** Test coverage is limited. See [ROADMAP.md](ROADMAP.md) for planned improvements. When adding features, add corresponding tests in a `tests/` directory at the project root.
 
 ## Adding a New AI Provider
 

@@ -104,6 +104,16 @@ Response:
 
 Interactive API documentation: http://localhost:8000/docs
 
+### Debug Chat UI
+
+A minimal static HTML interface for testing the chat API is in `debug/chat.html`. Serve it via HTTP to avoid CORS:
+
+```bash
+cd debug && python -m http.server 8080
+```
+
+Open http://localhost:8080/chat.html, set the API base URL and user ID, then send messages. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#debug-chat-ui) for details.
+
 ## Notes
 
 Notes are stored in the `notes/` directory (or `NOTES_PATH`). In Docker, the notes volume is mounted.
@@ -128,7 +138,7 @@ flowchart LR
 - `household.md` — General household notes (shared context)
 - `{user_id}.md` — Per-user notes (e.g. `alice.md`, `bob.md`)
 
-Gregory reads these before each chat and can append observations as he learns. Use a bind mount to access notes from the host:
+Gregory reads these before each chat and can append observations as he learns. See `notes/README.md` for details. Use a bind mount to access notes from the host:
 
 ```yaml
 volumes:
@@ -144,6 +154,10 @@ volumes:
 | `FAMILY_MEMBERS` | Comma-separated user IDs |
 | `LOG_LEVEL` | DEBUG, INFO, WARNING, ERROR |
 
+**Local (non-Docker):** Copy `config.json.example` to `config.json` and edit. JSON config is loaded automatically when the file exists.
+
+**Docker:** Use `.env` or environment variables in `docker-compose.yml`.
+
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
 
 ## Documentation
@@ -156,6 +170,9 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Environment variables |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Local setup and code structure |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker and Raspberry Pi |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues and solutions |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Planned features and integrations |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
 
 ## Raspberry Pi
 
