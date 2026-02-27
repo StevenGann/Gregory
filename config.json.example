@@ -8,6 +8,71 @@
   "gemini_model": "gemini-1.5-flash",
   "ai_provider": null,
   "observations_enabled": false,
+  "model_routing_enabled": true,
+  "ollama_ensure_models": false,
+  "system_prompt": null,
   "notes_path": "./notes",
-  "family_members": "alice,bob,kids"
+  "family_members": "alice,bob,kids",
+  "ai_providers": {
+    "ollama": [
+      {
+        "url": "http://localhost:11434",
+        "models": [
+          {
+            "id": "llama3.2",
+            "notes": "Fast, general chat, free"
+          },
+          {
+            "id": "mistral",
+            "notes": "Better reasoning"
+          }
+        ]
+      }
+    ],
+    "anthropic": [
+      {
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "models": [
+          {
+            "id": "claude-3-haiku",
+            "notes": "Cheap, simple tasks"
+          },
+          {
+            "id": "claude-sonnet-4-6",
+            "notes": "Premium, complex tasks"
+          }
+        ]
+      }
+    ],
+    "gemini": [
+      {
+        "api_key_env": "GEMINI_API_KEY",
+        "models": [
+          {
+            "id": "gemini-1.5-flash",
+            "notes": "Fast, cost-effective"
+          }
+        ]
+      }
+    ]
+  },
+  "model_priority": [
+    {
+      "provider": "ollama",
+      "instance": 0,
+      "model": "llama3.2"
+    },
+    {
+      "provider": "gemini",
+      "instance": 0,
+      "model": "gemini-1.5-flash"
+    },
+    {
+      "provider": "anthropic",
+      "instance": 0,
+      "model": "claude-sonnet-4-6"
+    }
+  ],
+  "heartbeat_reflection_minutes": 0,
+  "heartbeat_notes_cleanup_minutes": 0
 }

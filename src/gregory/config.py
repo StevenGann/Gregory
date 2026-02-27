@@ -3,7 +3,7 @@
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Tuple, Type
+from typing import Any, Literal, Tuple, Type
 
 from pydantic import Field
 from pydantic_settings import (
@@ -69,6 +69,44 @@ class Settings(BaseSettings):
     observations_enabled: bool = Field(
         default=False,
         description="Enable AI to append observations to notes",
+    )
+
+    # Model routing: consult highest-priority model to pick best provider for each message
+    model_routing_enabled: bool = Field(
+        default=True,
+        description="Ask highest-priority model which AI to use for each message",
+    )
+
+    # System prompt override (replaces default; use \\n for newlines in JSON/env)
+    system_prompt: str | None = Field(
+        default=None,
+        description="Override the base system prompt; empty/omit to use default",
+    )
+
+    # Ollama: ensure configured models are pulled on startup
+    ollama_ensure_models: bool = Field(
+        default=False,
+        description="On startup, pull any configured Ollama models that are missing",
+    )
+
+    # AI providers (multi-endpoint, multi-model) - see docs/CONFIGURATION.md
+    ai_providers: dict[str, Any] | None = Field(
+        default=None,
+        description="Structured config: ollama[], anthropic[], gemini[] with models and notes",
+    )
+    model_priority: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Order to try models: [{provider, instance, model}, ...]",
+    )
+
+    # Heartbeat: periodic background tasks
+    heartbeat_reflection_minutes: float = Field(
+        default=0,
+        description="Interval in minutes for self-reflection (question→answer→gregory.md). 0=disabled",
+    )
+    heartbeat_notes_cleanup_minutes: float = Field(
+        default=0,
+        description="Interval in minutes for notes cleanup (random doc summarized by advanced model). 0=disabled",
     )
 
     # Notes

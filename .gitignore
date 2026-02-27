@@ -8,3 +8,4 @@
 # Local config (contains secrets / local URLs)
 config.json
 .env
+/notes

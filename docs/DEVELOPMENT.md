@@ -43,15 +43,19 @@ flowchart TD
     main[main.py]
     config[config.py]
     store[store.py]
+    ollama_ensure[ollama_ensure.py]
 
     api[api/]
     api_routes[api/routes/]
     api_schemas[api/schemas.py]
 
     ai[ai/]
-    ai_providers[ai/providers/]
+    ai_config[ai/config.py]
     ai_router[ai/router.py]
+    ai_selector[ai/selector.py]
     ai_prompts[ai/prompts.py]
+    ai_observations[ai/observations.py]
+    ai_providers[ai/providers/]
 
     notes[notes/]
     notes_service[notes/service.py]
@@ -59,6 +63,7 @@ flowchart TD
 
     main --> api
     main --> config
+    main --> ollama_ensure
 
     api --> api_routes
     api --> api_schemas
@@ -71,30 +76,34 @@ flowchart TD
     chat --> notes
     chat --> store
 
+    ai --> ai_config
     ai --> ai_router
+    ai --> ai_selector
     ai --> ai_prompts
+    ai --> ai_observations
     ai --> ai_providers
 
     ai_providers --> base[base.py]
     ai_providers --> ollama[ollama.py]
     ai_providers --> claude[claude.py]
     ai_providers --> gemini[gemini.py]
-
-    ai --> ai_observations[observations.py]
 ```
 
 ## Module Responsibilities
 
 | Module | Responsibility |
 |--------|----------------|
-| `main.py` | FastAPI app, CORS, route mounting |
-| `config.py` | Pydantic settings from environment |
+| `main.py` | FastAPI app, CORS, route mounting, lifespan (ollama_ensure) |
+| `config.py` | Pydantic settings from config.json, .env, environment |
 | `store.py` | In-memory conversation history per user |
-| `api/routes/` | HTTP handlers |
+| `ollama_ensure.py` | On startup: pull missing Ollama models when `ollama_ensure_models=true` |
+| `api/routes/` | HTTP handlers: `health.py`, `users.py`, `chat.py` |
 | `api/schemas.py` | Request/response Pydantic models |
-| `ai/router.py` | Provider selection (Claude, Gemini, Ollama) |
-| `ai/providers/` | `ollama.py`, `claude.py`, `gemini.py` |
-| `ai/prompts.py` | System prompt construction |
+| `ai/config.py` | Multi-provider config resolution (`ai_providers`, `model_priority`) |
+| `ai/router.py` | Provider selection, `get_providers_for_message()`, fallback order |
+| `ai/selector.py` | Model routing: ask priority model which AI handles each message |
+| `ai/providers/` | `ollama.py`, `claude.py`, `gemini.py` — AI backend implementations |
+| `ai/prompts.py` | System prompt construction, model selection prompt |
 | `ai/observations.py` | Extract `[OBSERVATION: ...]` from responses and append to notes |
 | `notes/service.py` | Read/write Markdown notes |
 | `notes/loader.py` | Load notes as chat context |
@@ -111,7 +120,10 @@ pytest
 
 ## Adding a New AI Provider
 
-1. Add a class in `ai/providers/` that extends `AIProvider`.
+1. Add a class in `ai/providers/` that extends `AIProvider` (see `base.py`).
 2. Implement `async def generate(prompt, history, system_context) -> str`.
-3. Update `ai/router.py` to return the new provider based on config.
-4. Add corresponding environment variables in `config.py`.
+3. Update `ai/config.py` to support the new provider type in `AIProvidersConfig` and `_resolve_from_ai_config`.
+4. Update `ai/router.py` to instantiate the new provider in `_instantiate()`.
+5. Add corresponding settings in `config.py` and document in [CONFIGURATION.md](CONFIGURATION.md).
+
+See [AI System](AI_SYSTEM.md) for the full provider and routing architecture.

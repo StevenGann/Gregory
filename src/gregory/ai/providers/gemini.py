@@ -2,7 +2,8 @@
 
 import logging
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from gregory.ai.providers.base import AIProvider, ChatMessage
 from gregory.config import get_settings
@@ -11,12 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiProvider(AIProvider):
-    """Gemini provider via Google Generative AI."""
+    """Gemini provider via Google Gen AI SDK."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
         settings = get_settings()
         key = api_key or settings.gemini_api_key or ""
-        genai.configure(api_key=key)
+        self._client = genai.Client(api_key=key)
         self._model_name = model or settings.gemini_model
 
     async def generate(
@@ -26,21 +27,26 @@ class GeminiProvider(AIProvider):
         system_context: str = "",
     ) -> str:
         """Generate response via Gemini chat API."""
-        model = genai.GenerativeModel(
-            self._model_name,
+        # Build history as list of Content
+        gemini_history: list[types.Content] = []
+        for m in history:
+            role = "user" if m.role == "user" else "model"
+            gemini_history.append(
+                types.Content(role=role, parts=[types.Part.from_text(text=m.content)])
+            )
+
+        config = types.GenerateContentConfig(
             system_instruction=system_context
             or "You are Gregory, a friendly and helpful house AI assistant.",
         )
 
-        # Gemini uses "user" and "model" for roles
-        gemini_history: list[dict] = []
-        for m in history:
-            role = "user" if m.role == "user" else "model"
-            gemini_history.append({"role": role, "parts": [m.content]})
-
         try:
-            chat = model.start_chat(history=gemini_history)
-            response = chat.send_message(prompt)
+            chat = self._client.aio.chats.create(
+                model=self._model_name,
+                config=config,
+                history=gemini_history,
+            )
+            response = await chat.send_message(prompt)
             return (response.text or "").strip()
         except Exception as e:
             logger.error("Gemini request failed: %s", e)

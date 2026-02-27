@@ -11,44 +11,66 @@
       max-width: 600px;
       margin: 2rem auto;
       padding: 0 1rem;
+      background: #1a1a1a;
+      color: #e4e4e7;
     }
     h1 { font-size: 1.25rem; margin-bottom: 1rem; }
+    p { color: #a1a1aa; }
+    code { background: #27272a; padding: 0.2em 0.4em; border-radius: 4px; }
     .config {
-      background: #f5f5f5;
+      background: #27272a;
       padding: 1rem;
       border-radius: 6px;
       margin-bottom: 1rem;
+      border: 1px solid #3f3f46;
     }
     .config label { display: block; margin-bottom: 0.25rem; font-weight: 500; }
-    .config input { width: 100%; padding: 0.5rem; margin-bottom: 0.75rem; }
+    .config input {
+      width: 100%;
+      padding: 0.5rem;
+      margin-bottom: 0.75rem;
+      background: #18181b;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      color: #e4e4e7;
+    }
+    .config input::placeholder { color: #71717a; }
     .chat { display: flex; flex-direction: column; gap: 0.5rem; }
     .messages {
       min-height: 200px;
       max-height: 400px;
       overflow-y: auto;
-      border: 1px solid #ddd;
+      border: 1px solid #3f3f46;
       border-radius: 6px;
       padding: 1rem;
-      background: #fafafa;
+      background: #18181b;
     }
     .msg { margin-bottom: 0.75rem; }
-    .msg.user { color: #0066cc; }
-    .msg.assistant { color: #22863a; }
+    .msg.user { color: #7dd3fc; }
+    .msg.assistant { color: #86efac; }
     .msg .role { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; margin-bottom: 0.25rem; }
     .msg .content { white-space: pre-wrap; word-break: break-word; }
-    .msg.error { color: #cb2431; }
+    .msg.error { color: #f87171; }
     .input-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-    .input-row input[type="text"] { flex: 1; padding: 0.5rem; }
+    .input-row input[type="text"] {
+      flex: 1;
+      padding: 0.5rem;
+      background: #18181b;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      color: #e4e4e7;
+    }
+    .input-row input[type="text"]::placeholder { color: #71717a; }
     .input-row button {
       padding: 0.5rem 1rem;
-      background: #0066cc;
+      background: #3b82f6;
       color: white;
       border: none;
       border-radius: 6px;
       cursor: pointer;
       font-weight: 500;
     }
-    .input-row button:hover { background: #0052a3; }
+    .input-row button:hover { background: #2563eb; }
     .input-row button:disabled { opacity: 0.6; cursor: not-allowed; }
   </style>
 </head>

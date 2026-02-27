@@ -59,7 +59,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for full details.
 3. Update `ai/router.py` to return the new provider based on config.
 4. Add corresponding settings in `config.py` and document in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#adding-a-new-ai-provider) for the full guide.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#adding-a-new-ai-provider) and [docs/AI_SYSTEM.md](docs/AI_SYSTEM.md) for the full guide.
 
 ## Pull Requests
 

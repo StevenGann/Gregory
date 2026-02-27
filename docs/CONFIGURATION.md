@@ -35,7 +35,12 @@ When running in Docker, use `.env` or environment variables. When running locall
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OBSERVATIONS_ENABLED` | No | `false` | When `true`, Gregory appends learned facts to user notes using `[OBSERVATION: ...]` format in responses |
+| `OBSERVATIONS_ENABLED` | No | `false` | When `true`, Gregory appends learned facts using `[OBSERVATION: ...]` (user), `[GREGORY_NOTE: ...]` (self), `[HOUSEHOLD_NOTE: ...]`, or `[NOTE:entity: ...]` |
+| `MODEL_ROUTING_ENABLED` | No | `true` | When `true`, the highest-priority model is asked which AI should handle each message before responding |
+| `OLLAMA_ENSURE_MODELS` | No | `false` | When `true`, on startup Gregory pulls any configured Ollama models that are missing |
+| `HEARTBEAT_REFLECTION_MINUTES` | No | `0` | Interval for self-reflection (question→answer→gregory.md). 0=disabled |
+| `HEARTBEAT_NOTES_CLEANUP_MINUTES` | No | `0` | Interval for notes cleanup (random doc summarized by advanced model). 0=disabled |
+| `SYSTEM_PROMPT` | No | — | Override the base system prompt. Use `\n` for newlines in JSON or .env |
 
 ## JSON Config (Local Runs)
 
@@ -52,14 +57,122 @@ When not running in Docker, copy `config.json.example` to `config.json` and edit
   "gemini_model": "gemini-1.5-flash",
   "ai_provider": null,
   "observations_enabled": false,
+  "model_routing_enabled": true,
+  "ollama_ensure_models": false,
+  "system_prompt": null,
   "notes_path": "./notes",
   "family_members": "alice,bob,kids"
 }
 ```
 
-**Note:** Prefer `.env` for API keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) to avoid committing secrets.
+**Note:** Prefer `.env` for API keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) to avoid committing secrets. Or use `api_key_env` in `ai_providers` to reference env vars.
 
 Keys match the setting names (snake_case). The file is only loaded if it exists. Use `CONFIG_FILE` to point to a different path. See `config.json.example` in the project root for a ready-to-copy template.
+
+## AI Providers (Multi-Endpoint, Multi-Model)
+
+For cost control, you can define multiple Ollama URLs, Anthropic keys, and Gemini keys, each with multiple models and suitability notes. Gregory tries providers in order (Ollama first by default, since it's free).
+
+When `ai_providers` is set, it replaces the legacy flat config for provider selection. Use `model_priority` to control which models are tried and in what order.
+
+### Structure
+
+```json
+{
+  "ai_providers": {
+    "ollama": [
+      {
+        "url": "http://localhost:11434",
+        "models": [
+          { "id": "llama3.2", "notes": "Fast, general chat, free" },
+          { "id": "mistral", "notes": "Better reasoning" }
+        ]
+      }
+    ],
+    "anthropic": [
+      {
+        "api_key": null,
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "models": [
+          { "id": "claude-3-haiku", "notes": "Cheap, simple tasks" },
+          { "id": "claude-sonnet-4-6", "notes": "Premium, complex tasks only" }
+        ]
+      }
+    ],
+    "gemini": [
+      {
+        "api_key_env": "GEMINI_API_KEY",
+        "models": [
+          { "id": "gemini-1.5-flash", "notes": "Fast, cost-effective" }
+        ]
+      }
+    ]
+  },
+  "model_priority": [
+    { "provider": "ollama", "instance": 0, "model": "llama3.2" },
+    { "provider": "gemini", "instance": 0, "model": "gemini-1.5-flash" },
+    { "provider": "anthropic", "instance": 0, "model": "claude-sonnet-4-6" }
+  ]
+}
+```
+
+- **ollama**: `url` + `models[]` with `id` and `notes`
+- **anthropic** / **gemini**: `api_key` (direct) or `api_key_env` (env var name) + `models[]`
+- **model_priority**: Order to try. Without it, default is: all Ollama, then all Gemini, then all Anthropic.
+
+### Model routing
+
+When `model_routing_enabled` is true (default), Gregory asks the **highest-priority model** (e.g. llama3.2) which AI should handle each message before responding. The selector sees the user's message and the list of available models with their notes, then recommends one. Gregory uses that model for the actual chat, falling back to others if it fails. This reduces cost by steering simple tasks to local/free models and complex tasks to stronger models.
+
+```mermaid
+flowchart TB
+    subgraph config [Configuration]
+        AP[ai_providers]
+        MP[model_priority]
+    end
+
+    subgraph resolution [Provider Resolution]
+        Resolve[resolve_providers_ordered]
+    end
+
+    subgraph routing [Per-Message Routing]
+        Msg[User Message]
+        Select{model_routing_enabled?}
+        UseConfig[Use config order]
+        AskSelector[Ask priority model]
+        Reorder[Reorder by selection]
+    end
+
+    subgraph execution [Chat Execution]
+        Try1[Try provider 1]
+        Try2[Try provider 2]
+    end
+
+    AP --> Resolve
+    MP --> Resolve
+    Resolve --> Msg
+    Msg --> Select
+    Select -->|No| UseConfig
+    Select -->|Yes| AskSelector
+    AskSelector --> Reorder
+    UseConfig --> Try1
+    Reorder --> Try1
+    Try1 -->|Fail| Try2
+    Try1 -->|Success| done[Done]
+    Try2 -->|Success| done
+```
+
+See [AI System](AI_SYSTEM.md) for a detailed explanation of model routing and provider fallback.
+
+### Heartbeat
+
+When `heartbeat_reflection_minutes` or `heartbeat_notes_cleanup_minutes` is set (non-zero), Gregory runs periodic background tasks:
+
+- **Self-reflection** (every N minutes): Gregory generates a question about himself or what he knows, answers it using his notes, and appends the result to `gregory.md`. Uses the first available provider (normal priority order).
+
+- **Notes cleanup** (every N minutes): A random note document (household, gregory, entity, or user) is selected, sent to the **premium model** (last in `model_priority`, typically Claude/Gemini), summarized and cleaned up, then overwritten. Documents are chosen at random each cycle.
+
+Set either to `0` to disable. Minimum interval is 1 minute.
 
 ## Configuration Flow
 

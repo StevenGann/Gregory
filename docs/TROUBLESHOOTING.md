@@ -2,6 +2,29 @@
 
 Common issues and solutions when running Gregory.
 
+## Config: ai_providers vs legacy
+
+**Symptom:** You have `ai_providers` in `config.json` but Gregory seems to use legacy `OLLAMA_BASE_URL` or ignores some models.
+
+**Cause:** When `ai_providers` is set and contains at least one provider, it **replaces** the legacy flat config. Legacy variables (`OLLAMA_BASE_URL`, `ANTHROPIC_API_KEY`, etc.) are only used when `ai_providers` is absent or empty.
+
+**Fix:** Ensure `ai_providers` includes all endpoints you want. Use `model_priority` to control the order. For API keys, use `api_key_env` (e.g. `"api_key_env": "ANTHROPIC_API_KEY"`) instead of hardcoding in config.
+
+---
+
+## Model routing selects wrong model
+
+**Symptom:** Model routing is enabled but Gregory always uses the same model, or picks an unexpected one.
+
+**Causes and fixes:**
+
+1. **Only one provider** — With a single model, the selector is skipped; that model is always used.
+2. **Priority model fails** — If the selection call fails, Gregory falls back to config order. Check logs for `[model_select] Selection failed`.
+3. **Parse failure** — The selector parses the priority model's response for a model ID. If parsing fails, config order is used. Set `LOG_LEVEL=DEBUG` and look for `[model_select] Could not parse model from response`.
+4. **Disable routing** — Set `model_routing_enabled=false` to always use `model_priority` order without consulting the selector.
+
+---
+
 ## Claude or Gemini not selected
 
 **Symptom:** You set `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` but Gregory uses Ollama (or vice versa).

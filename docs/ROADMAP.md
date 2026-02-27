@@ -16,6 +16,10 @@ Gregory is in active development. This document outlines planned features and in
 - [x] **AI provider expansion** — Add Claude and Gemini as optional backends
 - [x] **Notes observations** — Gregory writes observations back to notes as he learns (enable with `OBSERVATIONS_ENABLED=true`; see [ARCHITECTURE.md](ARCHITECTURE.md#data-flow-notes))
 - [x] **Configurable model** — Allow choosing the Ollama model (e.g. `llama3.2`, `mistral`) via `OLLAMA_MODEL`
+- [x] **Multi-provider config** — `ai_providers` and `model_priority` for cost control and multiple Ollama/Claude/Gemini endpoints
+- [x] **Model routing** — Highest-priority model selects which AI handles each message (see [AI_SYSTEM.md](AI_SYSTEM.md))
+- [x] **Provider fallback** — Automatic fallback to next provider when one fails
+- [x] **Ollama ensure** — On startup, pull missing Ollama models when `ollama_ensure_models=true`
 
 ## Phase 3: Integrations
 

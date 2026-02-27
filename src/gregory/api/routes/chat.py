@@ -4,7 +4,8 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from gregory.ai import get_provider, get_providers_ordered
+from gregory.ai import get_provider
+from gregory.ai.router import get_providers_for_message
 from gregory.ai.observations import extract_observations
 from gregory.ai.prompts import build_system_prompt
 from gregory.api.schemas import ChatRequest, ChatResponse
@@ -36,7 +37,7 @@ def _provider_hint() -> str:
 @router.post("/{user_id}/chat", response_model=ChatResponse)
 async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
     """Send a message as the given user and receive Gregory's response."""
-    providers = get_providers_ordered()
+    providers = await get_providers_for_message(body.message)
     if not providers:
         raise HTTPException(
             status_code=503,
@@ -51,25 +52,37 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
     settings = get_settings()
     notes_context = load_notes_for_chat(user_id)
     system_prompt = build_system_prompt(
-        notes_context, observations_enabled=settings.observations_enabled
+        notes_context,
+        observations_enabled=settings.observations_enabled,
+        user_id=user_id,
     )
 
     history = get_history(user_id)
 
+    provider_order = [p[0] for p in providers]
+    logger.info(
+        "[chat] user=%s trying providers in order: %s",
+        user_id,
+        provider_order,
+    )
+
     response_text = None
     last_error: Exception | None = None
-    for name, provider in providers:
+    for idx, (name, provider) in enumerate(providers):
+        logger.info("[chat] Trying provider %d/%d: %s", idx + 1, len(providers), name)
         try:
             response_text = await provider.generate(
                 prompt=body.message,
                 history=history,
                 system_context=system_prompt,
             )
-            if name != providers[0][0]:
-                logger.info("Primary provider failed; succeeded with fallback: %s", name)
+            if idx == 0:
+                logger.info("[chat] Success with primary provider: %s", name)
+            else:
+                logger.info("[chat] Success with fallback provider %d: %s (primary failed)", idx + 1, name)
             break
         except Exception as e:
-            logger.warning("Provider %s failed: %s", name, e)
+            logger.warning("[chat] Provider %s failed: %s", name, e)
             last_error = e
 
     if response_text is None:
@@ -82,9 +95,21 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         cleaned_response, observations = extract_observations(response_text)
         notes_svc = NotesService()
         for obs in observations:
-            if obs:
-                notes_svc.append_user(user_id, f"- {obs}")
-                logger.info("Appended observation for %s: %s", user_id, obs[:50])
+            if not obs.content:
+                continue
+            line = f"- {obs.content}"
+            if obs.target == "user":
+                notes_svc.append_user(user_id, line)
+                logger.info("Appended observation for %s: %s", user_id, obs.content[:50])
+            elif obs.target == "gregory":
+                notes_svc.append_gregory(line)
+                logger.info("Appended Gregory note: %s", obs.content[:50])
+            elif obs.target == "household":
+                notes_svc.append_household(line)
+                logger.info("Appended household note: %s", obs.content[:50])
+            else:
+                notes_svc.append_entity(obs.target, line)
+                logger.info("Appended entity note for %s: %s", obs.target, obs.content[:50])
 
     # Persist to history (store cleaned response without observation blocks)
     append(user_id, "user", body.message)

@@ -6,28 +6,35 @@ Gregory is an AI-powered glue layer that connects various interfaces and automat
 
 ```mermaid
 flowchart TB
-    subgraph clients [Future Clients]
+    subgraph clients [Clients]
         WebApp[Web / Mobile App]
         VoiceInterface[Voice Interface]
-        OtherApps[Other Apps]
+        DebugUI[Debug Chat UI]
     end
 
     subgraph gregory [Gregory]
         API[HTTP API]
         Notes[Notes]
-        AI[AI Provider]
+        Router[AI Router]
     end
 
-    subgraph external [External]
+    subgraph ai [AI Backends]
         Ollama[Ollama]
+        Claude[Claude]
+        Gemini[Gemini]
+    end
+
+    subgraph future [Planned]
         HA[Home Assistant]
         Jellyfin[Jellyfin]
     end
 
     clients --> API
     API --> Notes
-    API --> AI
-    AI --> Ollama
+    API --> Router
+    Router --> Ollama
+    Router --> Claude
+    Router --> Gemini
 ```
 
 ## Features
@@ -35,7 +42,7 @@ flowchart TB
 - **HTTP API** — Chat with Gregory via REST; future apps can use this for voice, web, and more
 - **User-scoped chat** — Each family member has a dedicated conversation and notes
 - **Notes** — Gregory maintains Markdown notes per user and for the household
-- **AI backends** — Ollama (on-prem), Claude (Anthropic), Gemini (Google)
+- **AI backends** — Ollama (on-prem), Claude (Anthropic), Gemini (Google) with model routing and fallback
 - **Docker deployment** — Run on home server, Raspberry Pi, or anywhere
 
 ## Quick Start
@@ -136,6 +143,8 @@ flowchart LR
 ```
 
 - `household.md` — General household notes (shared context)
+- `gregory.md` — Gregory's self-notes (his experiences, thoughts, preferences)
+- `entities/*.md` — Notes about other things (pets, projects, etc.)
 - `{user_id}.md` — Per-user notes (e.g. `alice.md`, `bob.md`)
 
 Gregory reads these before each chat and can append observations as he learns. See `notes/README.md` for details. Use a bind mount to access notes from the host:
@@ -152,9 +161,12 @@ volumes:
 | `OLLAMA_BASE_URL` | Ollama server URL (e.g. `http://192.168.1.x:11434`) |
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
 | `GEMINI_API_KEY` | Google API key for Gemini |
-| `AI_PROVIDER` | Preferred provider: `claude`, `gemini`, or `ollama` |
+| `AI_PROVIDER` | Preferred provider (legacy). Use `ai_providers` + `model_priority` for multi-model cost control |
 | `OLLAMA_MODEL` | Ollama model (default: `llama3.2`) |
 | `OBSERVATIONS_ENABLED` | Let Gregory append learned facts to notes |
+| `MODEL_ROUTING_ENABLED` | Let the priority model choose which AI handles each message |
+| `OLLAMA_ENSURE_MODELS` | On startup, pull missing Ollama models |
+| `SYSTEM_PROMPT` | Override the base system prompt |
 | `NOTES_PATH` | Path to notes directory |
 | `FAMILY_MEMBERS` | Comma-separated user IDs |
 | `LOG_LEVEL` | DEBUG, INFO, WARNING, ERROR |
@@ -171,6 +183,7 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
 |----------|-------------|
 | [docs/README.md](docs/README.md) | Documentation index |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and data flow |
+| [docs/AI_SYSTEM.md](docs/AI_SYSTEM.md) | Model routing, provider selection, and fallback |
 | [docs/API.md](docs/API.md) | Detailed API reference |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Environment variables |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Local setup and code structure |
