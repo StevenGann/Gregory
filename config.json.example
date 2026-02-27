@@ -74,5 +74,13 @@
     }
   ],
   "heartbeat_reflection_minutes": 0,
-  "heartbeat_notes_cleanup_minutes": 0
+  "heartbeat_notes_cleanup_minutes": 0,
+  "memory_enabled": false,
+  "memory_path": "./memory",
+  "memory_similarity_threshold": 0.7,
+  "memory_top_k": 3,
+  "memory_embedding_provider": "default",
+  "memory_embedding_model": "nomic-embed-text",
+  "heartbeat_daily_summary_minutes": 0,
+  "heartbeat_memory_compression_minutes": 0
 }

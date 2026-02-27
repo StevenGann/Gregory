@@ -119,6 +119,42 @@ class Settings(BaseSettings):
         description="Comma-separated user IDs (e.g. alice,bob,kids)",
     )
 
+    # Memory system (journal files + vector DB)
+    memory_enabled: bool = Field(
+        default=False,
+        description="Enable journal memory system (daily YYYY-MM-DD.md files + ChromaDB vector index)",
+    )
+    memory_path: Path = Field(
+        default=Path("/app/memory"),
+        description="Path to memory directory (journal files + ChromaDB data; mount in Docker)",
+    )
+    memory_similarity_threshold: float = Field(
+        default=0.7,
+        description="Minimum cosine similarity (0.0-1.0) for a memory to be injected into context",
+    )
+    memory_top_k: int = Field(
+        default=3,
+        description="Maximum number of memory results to inject per chat turn",
+    )
+    memory_embedding_provider: str = Field(
+        default="default",
+        description="Embedding provider for memory vector index: 'default' (onnxruntime, self-contained) or 'ollama'",
+    )
+    memory_embedding_model: str = Field(
+        default="nomic-embed-text",
+        description="Embedding model name (used when memory_embedding_provider='ollama')",
+    )
+
+    # Heartbeat: daily journal summary and monthly compression
+    heartbeat_daily_summary_minutes: float = Field(
+        default=0,
+        description="Interval in minutes for daily journal summary (0=disabled). Suggested: 1440 (once/day).",
+    )
+    heartbeat_memory_compression_minutes: float = Field(
+        default=0,
+        description="Interval in minutes for monthly memory compression (0=disabled). Suggested: 10080 (weekly).",
+    )
+
     @classmethod
     def settings_customise_sources(
         cls,

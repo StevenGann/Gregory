@@ -13,8 +13,17 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - NOTES_PATH=/app/notes
       - FAMILY_MEMBERS=${FAMILY_MEMBERS:-}
+      - MEMORY_ENABLED=${MEMORY_ENABLED:-false}
+      - MEMORY_PATH=/app/memory
+      - MEMORY_SIMILARITY_THRESHOLD=${MEMORY_SIMILARITY_THRESHOLD:-0.7}
+      - MEMORY_TOP_K=${MEMORY_TOP_K:-3}
+      - MEMORY_EMBEDDING_PROVIDER=${MEMORY_EMBEDDING_PROVIDER:-default}
+      - MEMORY_EMBEDDING_MODEL=${MEMORY_EMBEDDING_MODEL:-nomic-embed-text}
+      - HEARTBEAT_DAILY_SUMMARY_MINUTES=${HEARTBEAT_DAILY_SUMMARY_MINUTES:-0}
+      - HEARTBEAT_MEMORY_COMPRESSION_MINUTES=${HEARTBEAT_MEMORY_COMPRESSION_MINUTES:-0}
     volumes:
       - notes:/app/notes
+      - memory:/app/memory
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -25,3 +34,4 @@ services:
 
 volumes:
   notes:
+  memory:

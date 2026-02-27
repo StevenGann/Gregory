@@ -34,11 +34,25 @@ When you learn something worth remembering, add it at the end of your response u
 - [NOTE:entity_name: content] — add to notes about an entity (e.g. [NOTE:dog: loves bacon treats] or [NOTE:garden: tomatoes planted in spring])
 You may include multiple such lines. Use sparingly - only for information worth recording, not casual chitchat."""
 
+JOURNAL_INSTRUCTION = """
+You have a personal journal where you record notable events and experiences. When something meaningful happens in a conversation — an event, decision, important fact, or experience worth remembering across future conversations — write a journal entry at the end of your response:
+- [JOURNAL: content] — write a dated entry in your daily journal
+
+Use sparingly. Reserve this for genuinely memorable moments, not routine chitchat."""
+
+MEMORY_SEARCH_INSTRUCTION = """
+To search your journal memory for something specific, add this at the end of your response:
+- [MEMORY_SEARCH: query] — search your memory; results will be available in your next response"""
+
 
 def build_system_prompt(
-    notes_context: str, observations_enabled: bool = False, user_id: str = ""
+    notes_context: str,
+    observations_enabled: bool = False,
+    user_id: str = "",
+    memory_context: str = "",
+    memory_enabled: bool = False,
 ) -> str:
-    """Build system prompt with optional notes context and observation instructions."""
+    """Build system prompt with optional notes context, memory context, and instructions."""
     base = get_settings().system_prompt or DEFAULT_SYSTEM_PROMPT
     if base and not base.strip():
         base = DEFAULT_SYSTEM_PROMPT
@@ -49,10 +63,15 @@ def build_system_prompt(
 You are in a private 1:1 chat with **{user_id}**. They are the only person in this conversation.
 Address your response to them. Do not greet or speak to other family members, pets, or entities—they are not in this chat. Use your notes to personalize for {user_id}, but respond as if talking only to them."""
         )
+    if memory_context.strip():
+        parts.append(memory_context)
     if notes_context.strip():
         parts.append(f"""## Your knowledge (from notes)
 
 {notes_context}""")
     if observations_enabled:
         parts.append(OBSERVATION_INSTRUCTION)
+    if memory_enabled:
+        parts.append(JOURNAL_INSTRUCTION)
+        parts.append(MEMORY_SEARCH_INSTRUCTION)
     return "\n\n".join(parts)

@@ -1,4 +1,4 @@
-"""Extract and process AI observations from chat responses."""
+"""Extract and process AI observations and memory markers from chat responses."""
 
 import re
 from dataclasses import dataclass
@@ -12,6 +12,10 @@ ENTITY_NOTE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Memory system markers
+JOURNAL_PATTERN = re.compile(r"\[JOURNAL:\s*([^\]]*)\]", re.IGNORECASE)
+MEMORY_SEARCH_PATTERN = re.compile(r"\[MEMORY_SEARCH:\s*([^\]]*)\]", re.IGNORECASE)
+
 
 @dataclass
 class Observation:
@@ -19,6 +23,20 @@ class Observation:
 
     target: str  # "user", "gregory", "household", or entity_id
     content: str
+
+
+@dataclass
+class JournalEntry:
+    """A journal entry marker [JOURNAL: text]."""
+
+    content: str
+
+
+@dataclass
+class MemorySearchRequest:
+    """A memory search request marker [MEMORY_SEARCH: query]."""
+
+    query: str
 
 
 def extract_observations(text: str) -> tuple[str, list[Observation]]:
@@ -55,3 +73,34 @@ def extract_observations(text: str) -> tuple[str, list[Observation]]:
     cleaned = HOUSEHOLD_NOTE_PATTERN.sub(repl_household, cleaned)
     cleaned = ENTITY_NOTE_PATTERN.sub(repl_entity, cleaned)
     return cleaned.strip(), observations
+
+
+def extract_memory_markers(
+    text: str,
+) -> tuple[str, list[JournalEntry], list[MemorySearchRequest]]:
+    """Extract [JOURNAL:] and [MEMORY_SEARCH:] markers from response text.
+
+    Called before extract_observations so the text passed to the existing
+    function is already stripped of memory markers.
+
+    Returns:
+        (cleaned_text, journal_entries, memory_search_requests)
+    """
+    journals: list[JournalEntry] = []
+    searches: list[MemorySearchRequest] = []
+
+    def repl_journal(m: re.Match) -> str:
+        content = m.group(1).strip()
+        if content:
+            journals.append(JournalEntry(content))
+        return ""
+
+    def repl_search(m: re.Match) -> str:
+        query = m.group(1).strip()
+        if query:
+            searches.append(MemorySearchRequest(query))
+        return ""
+
+    cleaned = JOURNAL_PATTERN.sub(repl_journal, text)
+    cleaned = MEMORY_SEARCH_PATTERN.sub(repl_search, cleaned)
+    return cleaned.strip(), journals, searches
