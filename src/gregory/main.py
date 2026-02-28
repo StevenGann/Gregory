@@ -8,8 +8,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from gregory.api.routes import chat, health, memory, users
+from gregory.api.routes import chat, debug, health, memory, users
 from gregory.config import get_settings
+from gregory.log_buffer import install_log_handler
 
 settings = get_settings()
 
@@ -45,6 +46,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     stream=sys.stdout,
 )
+install_log_handler()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -66,6 +68,7 @@ app.include_router(health.router)
 app.include_router(users.router)
 app.include_router(chat.router)
 app.include_router(memory.router)
+app.include_router(debug.router)
 
 
 @app.get("/")

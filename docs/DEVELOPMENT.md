@@ -33,7 +33,7 @@ A minimal static HTML chat interface for testing the API is in `debug/chat.html`
 cd debug && python -m http.server 8080
 ```
 
-Open http://localhost:8080/chat.html, set the API base URL and user ID, then send messages.
+Open http://localhost:8080/chat.html, set the API base URL and user ID, then send messages. For live log output, open http://localhost:8080/logging.html — it streams logs via Server-Sent Events with filters for level and substring. To view and edit config.json, open http://localhost:8080/config.html (secrets are masked; changes take effect immediately).
 - Interactive docs: http://localhost:8000/docs
 
 ## Code Structure

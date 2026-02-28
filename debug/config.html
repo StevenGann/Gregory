@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gregory Config</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 1rem;
+      background: #1a1a1a;
+      color: #e4e4e7;
+      font-size: 14px;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 1rem 0; font-weight: 600; }
+    .nav { margin-bottom: 1rem; }
+    .nav a {
+      color: #7dd3fc;
+      text-decoration: none;
+      margin-right: 1rem;
+      font-size: 0.9rem;
+    }
+    .nav a:hover { text-decoration: underline; }
+    .config-bar {
+      background: #27272a;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      border: 1px solid #3f3f46;
+    }
+    .config-bar label { display: block; margin-bottom: 0.25rem; font-weight: 500; color: #a1a1aa; }
+    .config-bar input[type="text"] {
+      width: 100%;
+      max-width: 400px;
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+      background: #18181b;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      color: #e4e4e7;
+      font-family: inherit;
+    }
+    .config-bar input::placeholder { color: #71717a; }
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .controls button {
+      padding: 0.5rem 1rem;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    .controls button:hover { background: #2563eb; }
+    .controls button.secondary {
+      background: #3f3f46;
+      color: #e4e4e7;
+    }
+    .controls button.secondary:hover { background: #52525b; }
+    .controls .status {
+      font-size: 0.85rem;
+      color: #71717a;
+    }
+    .controls .status.ok { color: #22c55e; }
+    .controls .status.error { color: #ef4444; }
+    .hint {
+      font-size: 0.8rem;
+      color: #71717a;
+      margin-bottom: 0.5rem;
+    }
+    .editor-wrap {
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      background: #18181b;
+      overflow: hidden;
+    }
+    #editor {
+      width: 100%;
+      min-height: 400px;
+      padding: 1rem;
+      font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      background: #18181b;
+      color: #e4e4e7;
+      border: none;
+      resize: vertical;
+    }
+    #editor:focus { outline: none; }
+  </style>
+</head>
+<body>
+  <h1>Gregory Config</h1>
+  <nav class="nav">
+    <a href="chat.html">Chat Debug</a>
+    <a href="logging.html">Log Viewer</a>
+    <a href="config.html">Config</a>
+  </nav>
+
+  <div class="config-bar">
+    <label for="baseUrl">API base URL</label>
+    <input type="text" id="baseUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
+  </div>
+
+  <div class="controls">
+    <button id="load">Load</button>
+    <button id="save" class="secondary">Save</button>
+    <span class="status" id="status"></span>
+  </div>
+  <p class="hint">Secrets (API keys, tokens) appear as [SET] or [NOT SET]. Leave them unchanged when saving to preserve existing values. Changes take effect immediately for new requests.</p>
+
+  <div class="editor-wrap">
+    <textarea id="editor" spellcheck="false" placeholder="Click Load to fetch config..."></textarea>
+  </div>
+
+  <script>
+    const baseUrlEl = document.getElementById('baseUrl');
+    const editor = document.getElementById('editor');
+    const loadBtn = document.getElementById('load');
+    const saveBtn = document.getElementById('save');
+    const statusEl = document.getElementById('status');
+
+    function baseUrl() {
+      return baseUrlEl.value.replace(/\/$/, '');
+    }
+
+    function setStatus(text, klass) {
+      statusEl.textContent = text;
+      statusEl.className = 'status' + (klass ? ' ' + klass : '');
+    }
+
+    async function load() {
+      setStatus('Loading…', '');
+      try {
+        const res = await fetch(baseUrl() + '/debug/config');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data._error || data.detail || res.statusText);
+        if (data._error) throw new Error(data._error);
+        editor.value = JSON.stringify(data, null, 2);
+        setStatus('Loaded', 'ok');
+      } catch (e) {
+        setStatus('Error: ' + e.message, 'error');
+      }
+    }
+
+    async function save() {
+      setStatus('Saving…', '');
+      let payload;
+      try {
+        payload = JSON.parse(editor.value);
+      } catch (e) {
+        setStatus('Invalid JSON: ' + e.message, 'error');
+        return;
+      }
+      try {
+        const res = await fetch(baseUrl() + '/debug/config', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data._error || data.detail || res.statusText);
+        if (data._error) throw new Error(data._error);
+        editor.value = JSON.stringify(data, null, 2);
+        setStatus('Saved', 'ok');
+      } catch (e) {
+        setStatus('Error: ' + e.message, 'error');
+      }
+    }
+
+    loadBtn.addEventListener('click', load);
+    saveBtn.addEventListener('click', save);
+
+    load();
+  </script>
+</body>
+</html>

@@ -222,6 +222,11 @@ class Settings(BaseSettings):
         return sources + (dotenv_settings, env_settings, file_secret_settings)
 
 
+def get_config_file_path() -> Path:
+    """Path to the JSON config file (used by debug UI)."""
+    return Path(os.environ.get("CONFIG_FILE", "config.json"))
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance."""
