@@ -8,3 +8,4 @@ config.json
 .env
 /notes
 /memory
+/.venv

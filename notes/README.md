@@ -8,6 +8,7 @@ Markdown notes loaded as system context before each chat.
 |---|---|
 | `household.md` | Shared household context (schedules, rules) |
 | `gregory.md` | Gregory's self-notes — experiences, thoughts, preferences |
+| `services.md` | Local services and contacts — doctors, pharmacies, urgent care, emergency numbers |
 | `entities/*.md` | Notes about things (e.g. `dog.md`, `house.md`, `garden.md`) |
 | `{user_id}.md` | Per-user notes (e.g. `alice.md`, `bob.md`) — preferences, reminders |
 
@@ -20,6 +21,7 @@ flowchart TB
     subgraph notes_dir [notes/]
         household[household.md]
         gregory[gregory.md]
+        services[services.md]
         entities[entities/*.md]
         user[alice.md, bob.md, ...]
     end
@@ -40,6 +42,7 @@ flowchart TB
 
     household --> Load
     gregory --> Load
+    services --> Load
     entities --> Load
     user --> Load
     Load --> SystemPrompt
@@ -74,6 +77,20 @@ When `OBSERVATIONS_ENABLED=true`, Gregory can append to notes using these block 
 # Gregory
 - Prefers concise answers unless asked to elaborate
 - Has learned the family prefers informal tone
+```
+
+**`services.md`**
+```markdown
+# Local Services
+
+## Pepper's care
+- Primary care: Dr. X, 555-1234
+- Urgent care: Clinic Y, 555-5678
+- Pharmacy: Pharmacy Z, 555-9012
+
+## Emergency
+- Poison control: 1-800-222-1222
+- Nearest ER: Hospital A, 555-0000
 ```
 
 **`entities/dog.md`**

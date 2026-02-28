@@ -15,6 +15,8 @@ ENTITY_NOTE_PATTERN = re.compile(
 # Memory system markers
 JOURNAL_PATTERN = re.compile(r"\[JOURNAL:\s*([^\]]*)\]", re.IGNORECASE)
 MEMORY_SEARCH_PATTERN = re.compile(r"\[MEMORY_SEARCH:\s*([^\]]*)\]", re.IGNORECASE)
+WIKIPEDIA_PATTERN = re.compile(r"\[WIKIPEDIA:\s*([^\]]*)\]", re.IGNORECASE)
+WEB_SEARCH_PATTERN = re.compile(r"\[WEB_SEARCH:\s*([^\]]*)\]", re.IGNORECASE)
 
 
 @dataclass
@@ -35,6 +37,20 @@ class JournalEntry:
 @dataclass
 class MemorySearchRequest:
     """A memory search request marker [MEMORY_SEARCH: query]."""
+
+    query: str
+
+
+@dataclass
+class WikipediaSearchRequest:
+    """A Wikipedia search request marker [WIKIPEDIA: query]."""
+
+    query: str
+
+
+@dataclass
+class WebSearchRequest:
+    """A web search request marker [WEB_SEARCH: query]."""
 
     query: str
 
@@ -77,17 +93,25 @@ def extract_observations(text: str) -> tuple[str, list[Observation]]:
 
 def extract_memory_markers(
     text: str,
-) -> tuple[str, list[JournalEntry], list[MemorySearchRequest]]:
-    """Extract [JOURNAL:] and [MEMORY_SEARCH:] markers from response text.
+) -> tuple[
+    str,
+    list[JournalEntry],
+    list[MemorySearchRequest],
+    list[WikipediaSearchRequest],
+    list[WebSearchRequest],
+]:
+    """Extract [JOURNAL:], [MEMORY_SEARCH:], [WIKIPEDIA:], and [WEB_SEARCH:] markers.
 
     Called before extract_observations so the text passed to the existing
     function is already stripped of memory markers.
 
     Returns:
-        (cleaned_text, journal_entries, memory_search_requests)
+        (cleaned_text, journal_entries, memory_search_requests, wikipedia_requests, web_search_requests)
     """
     journals: list[JournalEntry] = []
     searches: list[MemorySearchRequest] = []
+    wiki_searches: list[WikipediaSearchRequest] = []
+    web_searches: list[WebSearchRequest] = []
 
     def repl_journal(m: re.Match) -> str:
         content = m.group(1).strip()
@@ -101,6 +125,20 @@ def extract_memory_markers(
             searches.append(MemorySearchRequest(query))
         return ""
 
+    def repl_wikipedia(m: re.Match) -> str:
+        query = m.group(1).strip()
+        if query:
+            wiki_searches.append(WikipediaSearchRequest(query))
+        return ""
+
+    def repl_web_search(m: re.Match) -> str:
+        query = m.group(1).strip()
+        if query:
+            web_searches.append(WebSearchRequest(query))
+        return ""
+
     cleaned = JOURNAL_PATTERN.sub(repl_journal, text)
     cleaned = MEMORY_SEARCH_PATTERN.sub(repl_search, cleaned)
-    return cleaned.strip(), journals, searches
+    cleaned = WIKIPEDIA_PATTERN.sub(repl_wikipedia, cleaned)
+    cleaned = WEB_SEARCH_PATTERN.sub(repl_web_search, cleaned)
+    return cleaned.strip(), journals, searches, wiki_searches, web_searches

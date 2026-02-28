@@ -1,5 +1,7 @@
 """System prompts and context assembly."""
 
+from datetime import datetime
+
 from gregory.config import get_settings
 
 DEFAULT_SYSTEM_PROMPT = """You are Gregory, a friendly and helpful house AI assistant. You live with the family and help with everyday tasks.
@@ -44,6 +46,47 @@ MEMORY_SEARCH_INSTRUCTION = """
 To search your journal memory for something specific, add this at the end of your response:
 - [MEMORY_SEARCH: query] — search your memory; results will be available in your next response"""
 
+WIKIPEDIA_INSTRUCTION = """
+## Wikipedia verification (non-negotiable)
+
+Whenever you are about to make a factual claim about any of the following—do NOT answer first. Search Wikipedia first, then answer. No deliberation, no explaining why you're searching. Just emit the marker and you will receive the results immediately.
+
+**Always search first for:**
+- Dates, years, or when something happened
+- Locations, places, buildings, landmarks, MRT stations, addresses
+- Current events, recent news, or anything that may have changed
+- Any verifiable fact you are less than 95% certain about
+- Names of people, organizations, products, or technical terms you might misremember
+
+**Rule:** If in doubt, search. Accuracy over conversational smoothness. Do not rationalize your way out of verifying—your confidence is unreliable.
+
+**How:** Add [WIKIPEDIA: query] at the end of your response. Use the exact search term that will find the answer (e.g. [WIKIPEDIA: Hume MRT station] not [WIKIPEDIA: Singapore train]). You will get the results and can then provide an accurate answer."""
+
+WEB_SEARCH_INSTRUCTION = """
+## Web search
+
+For current events, recent news, or information that may not be in Wikipedia (product info, local events, real-time data), use web search:
+- [WEB_SEARCH: query] — search the web; you will receive results and can answer immediately
+
+**When to use web search instead of or in addition to Wikipedia:**
+- Breaking news, recent developments, "latest on X"
+- Product reviews, prices, availability
+- Local events, weather, traffic
+- Anything that changes frequently or is too new for Wikipedia
+
+**How:** Add [WEB_SEARCH: query] at the end of your response. Use a clear search term. You will get snippets from top results."""
+
+FACT_CHECK_STRICT_INSTRUCTION = """
+## High-stakes verification (mandatory)
+
+Never state health, medical, safety, legal, or financial advice without verifying first. For these topics, you MUST emit [WIKIPEDIA: X] or [WEB_SEARCH: X] before answering. Do not guess. Do not rely on memory alone for:
+- Medications, dosages, drug interactions, side effects
+- Medical advice, diagnoses, treatment recommendations
+- Safety procedures (e.g. choking, poisoning, emergency first aid)
+- Legal or financial advice
+
+If you cannot verify, say so. Do not invent or approximate."""
+
 
 def build_system_prompt(
     notes_context: str,
@@ -51,12 +94,21 @@ def build_system_prompt(
     user_id: str = "",
     memory_context: str = "",
     memory_enabled: bool = False,
+    wikipedia_context: str = "",
+    wikipedia_enabled: bool = False,
+    web_search_enabled: bool = False,
+    fact_check_strict: bool = False,
 ) -> str:
     """Build system prompt with optional notes context, memory context, and instructions."""
     base = get_settings().system_prompt or DEFAULT_SYSTEM_PROMPT
     if base and not base.strip():
         base = DEFAULT_SYSTEM_PROMPT
     parts = [base.strip()]
+
+    # Current date and time for context
+    now = datetime.now()
+    parts.append(f"**Current date and time:** {now.strftime('%A, %B %d, %Y at %I:%M %p')}")
+
     if user_id:
         parts.append(
             f"""## Current conversation
@@ -74,4 +126,12 @@ Address your response to them. Do not greet or speak to other family members, pe
     if memory_enabled:
         parts.append(JOURNAL_INSTRUCTION)
         parts.append(MEMORY_SEARCH_INSTRUCTION)
+    if wikipedia_enabled:
+        parts.append(WIKIPEDIA_INSTRUCTION)
+    if web_search_enabled:
+        parts.append(WEB_SEARCH_INSTRUCTION)
+    if fact_check_strict and (wikipedia_enabled or web_search_enabled):
+        parts.append(FACT_CHECK_STRICT_INSTRUCTION)
+    if wikipedia_context.strip():
+        parts.append(wikipedia_context)
     return "\n\n".join(parts)

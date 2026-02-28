@@ -1,6 +1,7 @@
 """Chat route - POST /users/{user_id}/chat."""
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
@@ -72,6 +73,10 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         user_id=user_id,
         memory_context=memory_context,
         memory_enabled=settings.memory_enabled,
+        wikipedia_context="",
+        wikipedia_enabled=settings.wikipedia_enabled,
+        web_search_enabled=settings.web_search_enabled,
+        fact_check_strict=settings.fact_check_strict,
     )
 
     history = get_history(user_id)
@@ -85,6 +90,7 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
 
     response_text = None
     last_error: Exception | None = None
+    successful_provider = None
     for idx, (name, provider) in enumerate(providers):
         logger.info("[chat] Trying provider %d/%d: %s", idx + 1, len(providers), name)
         try:
@@ -93,6 +99,7 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                 history=history,
                 system_context=system_prompt,
             )
+            successful_provider = provider
             if idx == 0:
                 logger.info("[chat] Success with primary provider: %s", name)
             else:
@@ -106,13 +113,96 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         logger.exception("All providers failed. Last error: %s", last_error)
         raise HTTPException(status_code=502, detail="All AI providers failed") from last_error
 
-    # Extract memory markers ([JOURNAL:] and [MEMORY_SEARCH:]) FIRST
+    # Extract memory markers ([JOURNAL:], [MEMORY_SEARCH:], [WIKIPEDIA:], [WEB_SEARCH:]) FIRST
+    (
+        response_text,
+        journal_entries,
+        memory_searches,
+        wikipedia_searches,
+        web_searches,
+    ) = extract_memory_markers(response_text)
+
+    # Wikipedia and/or web search: run searches and do follow-up call for immediate answer
+    has_search_tools = (wikipedia_searches or web_searches) and successful_provider
+    if (
+        has_search_tools
+        and (settings.wikipedia_enabled or settings.web_search_enabled)
+    ):
+        context_parts: list[str] = []
+        instruction_parts: list[str] = []
+
+        if settings.wikipedia_enabled and wikipedia_searches:
+            from gregory.tools.wikipedia import format_wikipedia_context, search_wikipedia
+
+            all_wiki_results: list[dict] = []
+            for req in wikipedia_searches:
+                try:
+                    results = await search_wikipedia(req.query, max_results=3)
+                    all_wiki_results.extend(results)
+                except Exception as e:
+                    logger.warning("[chat] Wikipedia search failed for %r: %s", req.query, e)
+
+            wiki_context = format_wikipedia_context(all_wiki_results)
+            if wiki_context:
+                context_parts.append(wiki_context)
+                instruction_parts.append("Wikipedia search results")
+            else:
+                context_parts.append("## Wikipedia search results\n\nNo results found.")
+                instruction_parts.append("Wikipedia search (no results)")
+
+        if settings.web_search_enabled and web_searches:
+            from gregory.tools.web_search import format_web_search_context, search_web
+
+            all_web_results: list[dict] = []
+            for req in web_searches:
+                try:
+                    results = await search_web(req.query, max_results=5)
+                    all_web_results.extend(results)
+                except Exception as e:
+                    logger.warning("[chat] Web search failed for %r: %s", req.query, e)
+
+            web_context = format_web_search_context(all_web_results)
+            if web_context:
+                context_parts.append(web_context)
+                instruction_parts.append("web search results")
+            else:
+                context_parts.append("## Web search results\n\nNo results found.")
+                instruction_parts.append("web search (no results)")
+
+        if context_parts:
+            combined_context = "\n\n".join(context_parts)
+            markers_note = "Do not include [WIKIPEDIA: ...] or [WEB_SEARCH: ...] markers."
+            follow_up_system = (
+                system_prompt
+                + "\n\n"
+                + combined_context
+                + "\n\nUse the "
+                + " and ".join(instruction_parts)
+                + " above to answer the user's question. "
+                "Provide a complete, helpful response. "
+                + markers_note
+            )
+            try:
+                response_text = await successful_provider.generate(
+                    prompt=body.message,
+                    history=history,
+                    system_context=follow_up_system,
+                )
+                logger.info("[chat] Search follow-up: got immediate answer")
+                (
+                    response_text,
+                    journal_entries,
+                    memory_searches,
+                    wikipedia_searches,
+                    web_searches,
+                ) = extract_memory_markers(response_text)
+            except Exception as e:
+                logger.warning("[chat] Search follow-up call failed: %s", e)
+
+    # Process journal entries and memory searches (from final response, after any Wikipedia follow-up)
     if settings.memory_enabled:
-        from gregory.ai.observations import extract_memory_markers
         from gregory.memory.loader import set_pending_memory_results
         from gregory.memory.service import get_vector_store, write_journal_entry
-
-        response_text, journal_entries, memory_searches = extract_memory_markers(response_text)
 
         for entry in journal_entries:
             try:
@@ -157,8 +247,9 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                 logger.info("Appended entity note for %s: %s", obs.target, obs.content[:50])
 
     # Persist to history (store cleaned response without observation/memory blocks)
-    append(user_id, "user", body.message)
-    append(user_id, "assistant", cleaned_response)
+    now = datetime.now()
+    append(user_id, "user", body.message, timestamp=now)
+    append(user_id, "assistant", cleaned_response, timestamp=now)
 
     conv_id = get_conversation_id(user_id)
     return ChatResponse(response=cleaned_response, conversation_id=conv_id)

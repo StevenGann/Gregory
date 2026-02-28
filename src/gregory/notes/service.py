@@ -9,10 +9,11 @@ logger = logging.getLogger(__name__)
 
 HOUSEHOLD_FILE = "household.md"
 GREGORY_FILE = "gregory.md"
+SERVICES_FILE = "services.md"
 ENTITIES_DIR = "entities"
 
 # Note types that are not per-user (excluded from list_users_from_notes)
-_RESERVED_STEMS = frozenset({"household", "gregory"})
+_RESERVED_STEMS = frozenset({"household", "gregory", "services"})
 
 
 class NotesService:
@@ -35,6 +36,10 @@ class NotesService:
     def _gregory_path(self) -> Path:
         """Path to Gregory's self-notes."""
         return self._base / GREGORY_FILE
+
+    def _services_path(self) -> Path:
+        """Path to local services and contacts (doctors, pharmacies, etc.)."""
+        return self._base / SERVICES_FILE
 
     def _entities_dir(self) -> Path:
         """Path to entities notes directory."""
@@ -67,6 +72,17 @@ class NotesService:
             return p.read_text(encoding="utf-8")
         except OSError as e:
             logger.warning("Could not read Gregory notes: %s", e)
+            return ""
+
+    def read_services(self) -> str:
+        """Read local services and contacts (doctors, pharmacies, urgent care, etc.)."""
+        p = self._services_path()
+        if not p.exists():
+            return ""
+        try:
+            return p.read_text(encoding="utf-8")
+        except OSError as e:
+            logger.warning("Could not read services notes: %s", e)
             return ""
 
     def read_entities(self) -> dict[str, str]:
@@ -151,6 +167,15 @@ class NotesService:
         except OSError as e:
             logger.warning("Could not write Gregory notes: %s", e)
 
+    def write_services(self, content: str) -> None:
+        """Overwrite services notes entirely."""
+        p = self._services_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            p.write_text(content.strip() + "\n" if content.strip() else "", encoding="utf-8")
+        except OSError as e:
+            logger.warning("Could not write services notes: %s", e)
+
     def write_entity(self, entity_id: str, content: str) -> None:
         """Overwrite entity notes entirely."""
         p = self._entity_path(entity_id)
@@ -176,6 +201,8 @@ class NotesService:
             docs.append(("household", "household"))
         if self.read_gregory().strip():
             docs.append(("gregory", "gregory"))
+        if self.read_services().strip():
+            docs.append(("services", "services"))
         for entity_id, content in self.read_entities().items():
             if content.strip():
                 docs.append(("entity", entity_id))
@@ -190,6 +217,8 @@ class NotesService:
             return self.read_household()
         if doc_type == "gregory":
             return self.read_gregory()
+        if doc_type == "services":
+            return self.read_services()
         if doc_type == "entity":
             return self.read_entities().get(doc_id, "")
         if doc_type == "user":
@@ -202,6 +231,8 @@ class NotesService:
             self.write_household(content)
         elif doc_type == "gregory":
             self.write_gregory(content)
+        elif doc_type == "services":
+            self.write_services(content)
         elif doc_type == "entity":
             self.write_entity(doc_id, content)
         elif doc_type == "user":

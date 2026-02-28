@@ -1,6 +1,7 @@
 """In-memory conversation history store. Per-user, single conversation each."""
 
 from collections import defaultdict
+from datetime import datetime
 
 from gregory.ai.providers.base import ChatMessage
 
@@ -34,6 +35,7 @@ def get_history(user_id: str) -> list[ChatMessage]:
     return hist[-max_messages:].copy()
 
 
-def append(user_id: str, role: str, content: str) -> None:
+def append(user_id: str, role: str, content: str, timestamp: datetime | None = None) -> None:
     """Append a message to the user's conversation."""
-    _history[user_id].append(ChatMessage(role=role, content=content))
+    ts = timestamp if timestamp is not None else datetime.now()
+    _history[user_id].append(ChatMessage(role=role, content=content, timestamp=ts))

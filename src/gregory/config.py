@@ -145,6 +145,20 @@ class Settings(BaseSettings):
         description="Embedding model name (used when memory_embedding_provider='ollama')",
     )
 
+    # Tools (external capabilities)
+    wikipedia_enabled: bool = Field(
+        default=True,
+        description="Enable Wikipedia search via [WIKIPEDIA: query] marker",
+    )
+    web_search_enabled: bool = Field(
+        default=True,
+        description="Enable web search via [WEB_SEARCH: query] marker",
+    )
+    fact_check_strict: bool = Field(
+        default=True,
+        description="Require verification before health, medical, safety, legal, or financial claims",
+    )
+
     # Heartbeat: daily journal summary and monthly compression
     heartbeat_daily_summary_minutes: float = Field(
         default=0,

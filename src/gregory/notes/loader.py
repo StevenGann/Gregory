@@ -4,10 +4,11 @@ from gregory.notes.service import NotesService
 
 
 def load_all_notes() -> str:
-    """Load household + Gregory + entities (no per-user notes). For background tasks."""
+    """Load household + Gregory + services + entities (no per-user notes). For background tasks."""
     notes = NotesService()
     household = notes.read_household()
     gregory_notes = notes.read_gregory()
+    services = notes.read_services()
     entities = notes.read_entities()
 
     parts: list[str] = []
@@ -15,6 +16,8 @@ def load_all_notes() -> str:
         parts.append("## Household notes\n" + household.strip())
     if gregory_notes:
         parts.append("## Gregory's notes (about himself)\n" + gregory_notes.strip())
+    if services:
+        parts.append("## Local services and contacts\n" + services.strip())
     for entity_id, content in entities.items():
         if content:
             parts.append(f"## Notes about {entity_id}\n" + content)
@@ -24,10 +27,11 @@ def load_all_notes() -> str:
 
 
 def load_notes_for_chat(user_id: str) -> str:
-    """Load household + Gregory + entities + user notes as context for chat."""
+    """Load household + Gregory + services + entities + user notes as context for chat."""
     notes = NotesService()
     household = notes.read_household()
     gregory_notes = notes.read_gregory()
+    services = notes.read_services()
     entities = notes.read_entities()
     user = notes.read_user(user_id)
 
@@ -36,6 +40,8 @@ def load_notes_for_chat(user_id: str) -> str:
         parts.append("## Household notes\n" + household.strip())
     if gregory_notes:
         parts.append("## Gregory's notes (about himself)\n" + gregory_notes.strip())
+    if services:
+        parts.append("## Local services and contacts\n" + services.strip())
     for entity_id, content in entities.items():
         if content:
             parts.append(f"## Notes about {entity_id}\n" + content)
