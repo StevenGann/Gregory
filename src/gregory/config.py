@@ -212,7 +212,8 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> Tuple[PydanticBaseSettingsSource, ...]:
-        """Load from init, JSON file (when not in Docker), .env, then env vars."""
+        """Load settings. Order (later overrides earlier): init defaults, config.json
+        (if exists), .env file, environment variables."""
         json_path = Path(os.environ.get("CONFIG_FILE", "config.json"))
         sources: Tuple[PydanticBaseSettingsSource, ...] = (init_settings,)
         if json_path.exists():

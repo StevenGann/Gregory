@@ -28,11 +28,15 @@ async def load_memory_for_chat(
 ) -> str:
     """Assemble memory context for a chat turn.
 
-    1. Check for pending [MEMORY_SEARCH:] results from the previous turn.
-    2. Run automatic vector similarity search on the user's current message.
-    3. Deduplicate and format as Markdown.
+    Args:
+        user_id: User identifier (for pending results lookup).
+        message: Current user message (used for auto-search query).
+        vector_store: ChromaDB-backed store for similarity search.
 
-    Returns an empty string if no relevant memories are found.
+    Returns:
+        Markdown-formatted memory context, or empty string if none found.
+        Combines: (1) pending [MEMORY_SEARCH:] results from prior turn,
+        (2) auto-search hits from current message.
     """
     hits: list[dict] = []
 

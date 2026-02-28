@@ -44,6 +44,19 @@ When running in Docker, use `.env` or environment variables. When running locall
 | `HEARTBEAT_NOTES_CLEANUP_MINUTES` | No | `0` | Interval for notes cleanup (random doc summarized by advanced model). 0=disabled |
 | `SYSTEM_PROMPT` | No | — | Override the base system prompt. Use `\n` for newlines in JSON or .env |
 
+### Tools
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `WIKIPEDIA_ENABLED` | No | `true` | Enable Wikipedia search via `[WIKIPEDIA: query]` marker in AI responses |
+| `WEB_SEARCH_ENABLED` | No | `true` | Enable web search via `[WEB_SEARCH: query]` marker (uses DuckDuckGo) |
+| `FACT_CHECK_STRICT` | No | `true` | Require AI to verify health, medical, safety, legal, or financial claims before answering |
+| `HA_ENABLED` | No | `false` | Enable Home Assistant integration (lights, thermostats, sensors) |
+| `HA_BASE_URL` | For HA | — | Home Assistant URL (e.g. `http://192.168.0.x:8123`) |
+| `HA_ACCESS_TOKEN` | For HA | — | Home Assistant long-lived access token |
+
+See [TOOLS.md](TOOLS.md) for tool usage and [HOME_ASSISTANT.md](HOME_ASSISTANT.md) for Home Assistant setup.
+
 ## JSON Config (Local Runs)
 
 When not running in Docker, copy `config.json.example` to `config.json` and edit:
@@ -69,7 +82,17 @@ When not running in Docker, copy `config.json.example` to `config.json` and edit
   "memory_similarity_threshold": 0.7,
   "memory_top_k": 3,
   "memory_embedding_provider": "default",
-  "memory_embedding_model": "nomic-embed-text"
+  "memory_embedding_model": "nomic-embed-text",
+  "heartbeat_reflection_minutes": 0,
+  "heartbeat_notes_cleanup_minutes": 0,
+  "heartbeat_daily_summary_minutes": 0,
+  "heartbeat_memory_compression_minutes": 0,
+  "wikipedia_enabled": true,
+  "web_search_enabled": true,
+  "fact_check_strict": true,
+  "ha_enabled": false,
+  "ha_base_url": null,
+  "ha_access_token": null
 }
 ```
 

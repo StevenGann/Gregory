@@ -82,5 +82,11 @@
   "memory_embedding_provider": "default",
   "memory_embedding_model": "nomic-embed-text",
   "heartbeat_daily_summary_minutes": 0,
-  "heartbeat_memory_compression_minutes": 0
+  "heartbeat_memory_compression_minutes": 0,
+  "wikipedia_enabled": true,
+  "web_search_enabled": true,
+  "fact_check_strict": true,
+  "ha_enabled": false,
+  "ha_base_url": null,
+  "ha_access_token": null
 }

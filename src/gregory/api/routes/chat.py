@@ -50,7 +50,13 @@ _TURN_ON_PATTERN = re.compile(
 
 
 def _infer_ha_action(message: str, history: list | None = None) -> str | None:
-    """Return 'turn_on', 'turn_off', or None if intent is unclear."""
+    """Return 'turn_on', 'turn_off', or None if intent is unclear.
+
+    Pronoun resolution: when the user says 'turn it on/off' or 'that didn't work',
+    we infer the action from message patterns. For corrections (e.g. 'no it isn't'),
+    we look at the last assistant message to determine if we previously claimed
+    on or off, and return the opposite action for retry.
+    """
     msg = message.lower().strip()
     if _TURN_OFF_PATTERN.search(msg):
         return "turn_off"
@@ -96,7 +102,11 @@ _LAST_DEVICE_PATTERNS = [
 
 def _extract_last_device_from_history(history: list) -> str | None:
     """Extract the last-mentioned device name from assistant messages.
-    Used when user says 'turn it on/off' but the AI emits no HA markers."""
+
+    Used for pronoun resolution: when user says 'turn it on/off' but the AI
+    emitted no HA markers, we scan recent assistant messages for patterns like
+    'The X is now on/off' or 'I turned on the X' to recover the device name.
+    """
     for msg in reversed(history):
         if getattr(msg, "role", None) != "assistant":
             continue
@@ -119,7 +129,12 @@ def _entity_id_to_search_query(entity_id: str) -> str:
 
 @router.post("/{user_id}/chat", response_model=ChatResponse)
 async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
-    """Send a message as the given user and receive Gregory's response."""
+    """Send a message as the given user and receive Gregory's response.
+
+    Loads notes and memory context, optionally uses model routing, tries providers
+    in order, runs tools (Wikipedia, web search, HA) if requested, persists journal
+    entries and observations, then returns the cleaned response.
+    """
     providers = await get_providers_for_message(body.message)
     if not providers:
         raise HTTPException(
@@ -196,7 +211,10 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         logger.exception("All providers failed. Last error: %s", last_error)
         raise HTTPException(status_code=502, detail="All AI providers failed") from last_error
 
-    # Extract memory markers ([JOURNAL:], [MEMORY_SEARCH:], [WIKIPEDIA:], [WEB_SEARCH:], HA markers) FIRST
+    # --- Memory marker extraction ---
+    # Parse AI response for [JOURNAL:], [MEMORY_SEARCH:], [WIKIPEDIA:], [WEB_SEARCH:],
+    # and HA markers ([HA_LIST], [HA_FIND:], [HA_STATE:], [HA_SERVICE:]). Markers are
+    # stripped from the response; tool requests are processed below.
     (
         response_text,
         journal_entries,
@@ -209,8 +227,9 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         ha_service_reqs,
     ) = extract_memory_markers(response_text)
 
-    # Pronoun resolution: when user says "turn it on/off" but AI emitted no HA markers,
-    # infer the device from the last assistant message and add a synthetic find request
+    # --- HA pronoun resolution ---
+    # When user says "turn it on/off" but AI emitted no HA markers, infer the device
+    # from the last assistant message and add a synthetic [HA_FIND:] request.
     action = _infer_ha_action(body.message, history)
     if (
         action
@@ -222,7 +241,10 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         ha_find_reqs = [HAFindRequest(query=device)]
         logger.info("[chat] Pronoun resolution: inferred device %r from history", device)
 
-    # Wikipedia and/or web search and/or HA: run tools and do follow-up call for immediate answer
+    # --- Tool execution loop ---
+    # If AI requested Wikipedia, web search, or HA: run tools, build context from
+    # results, and perform a follow-up AI call so the user gets an immediate answer
+    # (rather than waiting for the next turn).
     has_ha_tools = (
         settings.ha_enabled
         and settings.ha_base_url
@@ -567,7 +589,9 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                         "Please try again—the search or action may have succeeded."
                     )
 
-    # Process journal entries and memory searches (from final response, after any Wikipedia follow-up)
+    # --- Persist journal entries and queue memory search results ---
+    # Write [JOURNAL:] entries to disk and ChromaDB. Store [MEMORY_SEARCH:] results
+    # for injection into the next user turn.
     if settings.memory_enabled:
         from gregory.memory.loader import set_pending_memory_results
         from gregory.memory.service import get_vector_store, write_journal_entry
@@ -592,7 +616,9 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                 set_pending_memory_results(user_id, all_results)
                 logger.info("[chat] Stored %d memory search results for next turn", len(all_results))
 
-    # Extract observations and append to notes if enabled
+    # --- Observation extraction ---
+    # If observations_enabled: extract [OBSERVATION:], [GREGORY_NOTE:], etc. and
+    # append to the appropriate notes file.
     cleaned_response = response_text
     if settings.observations_enabled:
         cleaned_response, observations = extract_observations(response_text)

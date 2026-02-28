@@ -140,9 +140,9 @@ def resolve_providers_ordered() -> list[ResolvedProvider]:
     priority = get_model_priority()
 
     if ai_config and (ai_config.ollama or ai_config.anthropic or ai_config.gemini):
-        # New config: build from ai_providers and model_priority
+        # ai_providers is set: use structured config
         return _resolve_from_ai_config(ai_config, priority)
-    # Legacy: build from flat OLLAMA_BASE_URL, ANTHROPIC_API_KEY, etc.
+    # ai_providers absent or empty: use legacy flat config (OLLAMA_BASE_URL, etc.)
     return _resolve_from_legacy_config(priority)
 
 
@@ -150,7 +150,7 @@ def _resolve_from_ai_config(
     ai_config: AIProvidersConfig,
     priority: list[ModelPriorityEntry],
 ) -> list[ResolvedProvider]:
-    """Build provider list from ai_providers config."""
+    """Build provider list from ai_providers + model_priority (used when ai_providers is set)."""
     result: list[ResolvedProvider] = []
 
     def add_ollama():
@@ -269,7 +269,7 @@ def _resolve_from_ai_config(
 
 
 def _resolve_from_legacy_config(priority: list[ModelPriorityEntry]) -> list[ResolvedProvider]:
-    """Build provider list from legacy flat config (OLLAMA_BASE_URL, etc.)."""
+    """Build provider list from legacy flat config when ai_providers is absent (OLLAMA_BASE_URL, ANTHROPIC_API_KEY, etc.)."""
     settings = get_settings()
     result: list[ResolvedProvider] = []
     order = ["ollama", "gemini", "anthropic"]

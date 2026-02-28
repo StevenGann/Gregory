@@ -17,6 +17,10 @@ flowchart TB
         Users["GET /users"]
         Chat["POST /users/{user_id}/chat"]
         MemSearch["GET /memory/search"]
+        DebugLogs["GET /debug/logs"]
+        DebugStream["GET /debug/logs/stream"]
+        DebugConfigGet["GET /debug/config"]
+        DebugConfigPatch["PATCH /debug/config"]
     end
 
     subgraph responses [Typical Responses]
@@ -25,6 +29,10 @@ flowchart TB
         Users --> UsersResp[user IDs array]
         Chat --> ChatResp[response + conversation_id]
         MemSearch --> MemResp[results array with similarity scores]
+        DebugLogs --> DebugLogsResp[Filtered log entries]
+        DebugStream --> DebugStreamResp[SSE stream]
+        DebugConfigGet --> DebugConfigResp[Config with secrets masked]
+        DebugConfigPatch --> DebugConfigWrite[Updated config]
     end
 ```
 
@@ -186,6 +194,62 @@ Search Gregory's memory journal using a natural language query. Requires `MEMORY
 | 503 | Memory system is disabled (`MEMORY_ENABLED=false`) |
 
 **Note:** This endpoint uses `threshold=0.0` so it always returns up to `top_k` results regardless of similarity, ordered by relevance. This is useful for inspection and debugging. The pre-chat auto-search uses `MEMORY_SIMILARITY_THRESHOLD` to filter low-confidence results.
+
+---
+
+### Debug API
+
+Debug endpoints support the debug UI (`debug/chat.html`, `debug/config.html`, `debug/logging.html`). Serve the debug UI over HTTP to avoid CORS (e.g. `python -m http.server 8080` from the `debug/` directory).
+
+#### Get Logs
+
+**GET /debug/logs**
+
+Return recent log entries. Filter by level and/or substring.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| levels | string | — | Comma-separated: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| substring | string | — | Filter messages containing this string |
+| limit | integer | `500` | Maximum number of entries (1–2000) |
+
+**Response:** Array of log entry objects with `level`, `message`, `logger`, `timestamp`, etc.
+
+---
+
+#### Stream Logs
+
+**GET /debug/logs/stream**
+
+Server-Sent Events stream of new log entries. Useful for live log viewing in the debug UI.
+
+**Response:** `text/event-stream` — each event is a JSON log entry.
+
+---
+
+#### Get Config
+
+**GET /debug/config**
+
+Return `config.json` contents with secrets masked (`[SET]` or `[NOT SET]`). For config viewer in debug UI.
+
+**Response:** JSON object (config with masked values). Returns `{}` if config file does not exist.
+
+---
+
+#### Patch Config
+
+**PATCH /debug/config**
+
+Update `config.json` with the request body. Secrets sent as `[SET]` or `[MASKED]` are preserved from the existing config. Clears the settings cache so subsequent requests use the new values.
+
+**Request Body:** JSON object (partial or full config).
+
+**Response:** Updated config with secrets masked.
+
+**Note:** Changes to some settings (e.g. `ai_providers`, `memory_enabled`) may require a server restart to take full effect.
 
 ---
 

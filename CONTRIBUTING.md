@@ -49,6 +49,8 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for full details.
 | `src/gregory/api/routes/` | HTTP route handlers |
 | `src/gregory/ai/providers/` | AI backend implementations |
 | `src/gregory/notes/` | Notes loading and service |
+| `src/gregory/memory/` | Journal and vector memory |
+| `src/gregory/tools/` | Home Assistant, Wikipedia, web search |
 | `docs/` | Documentation |
 | `debug/` | Debug and testing utilities |
 

@@ -140,12 +140,19 @@ def extract_memory_markers(
 ]:
     """Extract [JOURNAL:], [MEMORY_SEARCH:], [WIKIPEDIA:], [WEB_SEARCH:], and HA markers.
 
-    Called before extract_observations so the text passed to the existing
-    function is already stripped of memory markers.
+    Called before extract_observations so the text passed to observations is
+    already stripped of memory markers.
 
-    Returns:
-        (cleaned_text, journal_entries, memory_search_requests, wikipedia_requests,
-         web_search_requests, ha_list_requests, ha_find_requests, ha_state_requests, ha_service_requests)
+    Returns a 9-tuple:
+        (0) cleaned_text: response with all markers removed
+        (1) journal_entries: [JOURNAL: text] entries to persist
+        (2) memory_search_requests: [MEMORY_SEARCH: query] for deferred injection
+        (3) wikipedia_requests: [WIKIPEDIA: query] for immediate tool call
+        (4) web_search_requests: [WEB_SEARCH: query] for immediate tool call
+        (5) ha_list_requests: [HA_LIST] or [HA_LIST: domain]
+        (6) ha_find_requests: [HA_FIND: name]
+        (7) ha_state_requests: [HA_STATE: entity_id]
+        (8) ha_service_requests: [HA_SERVICE: params]
     """
     journals: list[JournalEntry] = []
     searches: list[MemorySearchRequest] = []

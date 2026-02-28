@@ -23,7 +23,7 @@ Gregory is in active development. This document outlines planned features and in
 
 ## Phase 3: Integrations
 
-- [ ] **Home Assistant** — Control lights, thermostats, and devices via natural language
+- [x] **Home Assistant** — Control lights, thermostats, and devices via natural language (see [HOME_ASSISTANT.md](HOME_ASSISTANT.md))
 - [ ] **Jellyfin** — Query media library, start playback, manage content
 - [ ] **Webhooks / triggers** — Allow external systems to trigger Gregory actions
 

@@ -43,6 +43,8 @@ flowchart TD
     main[main.py]
     config[config.py]
     store[store.py]
+    log_buffer[log_buffer.py]
+    heartbeat[heartbeat.py]
     ollama_ensure[ollama_ensure.py]
 
     api[api/]
@@ -61,8 +63,21 @@ flowchart TD
     notes_service[notes/service.py]
     notes_loader[notes/loader.py]
 
+    memory[memory/]
+    memory_journal[memory/journal.py]
+    memory_vector[memory/vector_store.py]
+    memory_service[memory/service.py]
+    memory_loader[memory/loader.py]
+
+    tools[tools/]
+    tools_ha[tools/home_assistant.py]
+    tools_wiki[tools/wikipedia.py]
+    tools_web[tools/web_search.py]
+
     main --> api
     main --> config
+    main --> log_buffer
+    main --> heartbeat
     main --> ollama_ensure
 
     api --> api_routes
@@ -71,10 +86,14 @@ flowchart TD
     api_routes --> health[health.py]
     api_routes --> users[users.py]
     api_routes --> chat[chat.py]
+    api_routes --> memory_route[memory.py]
+    api_routes --> debug[debug.py]
 
     chat --> ai
     chat --> notes
     chat --> store
+    chat --> memory_loader
+    chat --> tools
 
     ai --> ai_config
     ai --> ai_router
@@ -87,26 +106,41 @@ flowchart TD
     ai_providers --> ollama[ollama.py]
     ai_providers --> claude[claude.py]
     ai_providers --> gemini[gemini.py]
+
+    memory --> memory_journal
+    memory --> memory_vector
+    memory --> memory_service
+    memory --> memory_loader
+    heartbeat --> memory_service
 ```
 
 ## Module Responsibilities
 
 | Module | Responsibility |
 |--------|----------------|
-| `main.py` | FastAPI app, CORS, route mounting, lifespan (ollama_ensure) |
+| `main.py` | FastAPI app, CORS, route mounting, lifespan (ollama_ensure, heartbeat, memory reindex) |
 | `config.py` | Pydantic settings from config.json, .env, environment |
 | `store.py` | In-memory conversation history per user |
+| `log_buffer.py` | In-memory log buffer for debug UI; captures logs, supports SSE streaming |
+| `heartbeat.py` | Periodic tasks: reflection, notes cleanup, daily summary, memory compression |
 | `ollama_ensure.py` | On startup: pull missing Ollama models when `ollama_ensure_models=true` |
-| `api/routes/` | HTTP handlers: `health.py`, `users.py`, `chat.py` |
+| `api/routes/` | HTTP handlers: `health.py`, `users.py`, `chat.py`, `memory.py`, `debug.py` |
 | `api/schemas.py` | Request/response Pydantic models |
 | `ai/config.py` | Multi-provider config resolution (`ai_providers`, `model_priority`) |
 | `ai/router.py` | Provider selection, `get_providers_for_message()`, fallback order |
 | `ai/selector.py` | Model routing: ask priority model which AI handles each message |
 | `ai/providers/` | `ollama.py`, `claude.py`, `gemini.py` — AI backend implementations |
 | `ai/prompts.py` | System prompt construction, model selection prompt |
-| `ai/observations.py` | Extract `[OBSERVATION: ...]` from responses and append to notes |
+| `ai/observations.py` | Extract markers from responses: observations, journal, memory search, tools |
 | `notes/service.py` | Read/write Markdown notes |
 | `notes/loader.py` | Load notes as chat context |
+| `memory/journal.py` | Journal file read/write (daily, monthly) |
+| `memory/vector_store.py` | ChromaDB vector store for memory retrieval |
+| `memory/service.py` | Singletons, journal entry write, startup reindex |
+| `memory/loader.py` | Load memory context for chat (auto-search, pending results) |
+| `tools/home_assistant.py` | Home Assistant REST API client |
+| `tools/wikipedia.py` | Wikipedia API search |
+| `tools/web_search.py` | Web search via DuckDuckGo |
 
 ## Testing
 

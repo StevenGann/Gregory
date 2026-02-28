@@ -14,6 +14,9 @@ Documentation for Gregory, the Smart House AI.
 | [Deployment](DEPLOYMENT.md) | Docker, Raspberry Pi, and production deployment |
 | [Troubleshooting](TROUBLESHOOTING.md) | Common issues and solutions |
 | [Roadmap](ROADMAP.md) | Planned features and integrations |
+| [Tools](TOOLS.md) | Wikipedia, web search, Home Assistant |
+| [Known Issues](KNOWN_ISSUES.md) | Known limitations |
+| [Status](STATUS.md) | Implementation status |
 
 ## Concepts at a Glance
 
@@ -29,12 +32,16 @@ flowchart LR
         Router[Router]
         Selector[Selector]
         Providers[Providers]
+        Tools[Tools]
     end
 
     subgraph external [External]
         Ollama[Ollama]
         Claude[Claude]
         Gemini[Gemini]
+        Wiki[Wikipedia]
+        WebSearch[Web Search]
+        HA[Home Assistant]
     end
 
     Client --> API
@@ -45,6 +52,10 @@ flowchart LR
     Providers --> Ollama
     Providers --> Claude
     Providers --> Gemini
+    API --> Tools
+    Tools --> Wiki
+    Tools --> WebSearch
+    Tools --> HA
 ```
 
 ## Quick Links

@@ -1,6 +1,6 @@
 # Gregory — Smart House AI
 
-Gregory is an AI-powered glue layer that connects various interfaces and automations. His main interface is an HTTP API for chatting, with planned integrations for Home Assistant, Jellyfin, and multiple AI backends.
+Gregory is an AI-powered glue layer that connects various interfaces and automations. His main interface is an HTTP API for chatting, with integrations for Home Assistant, Wikipedia, web search, and multiple AI backends.
 
 ## Overview
 
@@ -24,14 +24,20 @@ flowchart TB
         Gemini[Gemini]
     end
 
-    subgraph future [Planned]
+    subgraph integrations [Integrations]
         HA[Home Assistant]
+        Wiki[Wikipedia]
+        WebSearch[Web Search]
+    end
+
+    subgraph future [Planned]
         Jellyfin[Jellyfin]
     end
 
     clients --> API
     API --> Notes
     API --> Router
+    API --> integrations
     Router --> Ollama
     Router --> Claude
     Router --> Gemini
@@ -43,6 +49,8 @@ flowchart TB
 - **User-scoped chat** — Each family member has a dedicated conversation and notes
 - **Notes** — Gregory maintains Markdown notes per user and for the household
 - **AI backends** — Ollama (on-prem), Claude (Anthropic), Gemini (Google) with model routing and fallback
+- **Wikipedia & Web Search** — Gregory can look up facts and current information via markers in responses
+- **Home Assistant** — Control lights, thermostats, and devices via natural language
 - **Docker deployment** — Run on home server, Raspberry Pi, or anywhere
 
 ## Quick Start
@@ -84,6 +92,10 @@ flowchart TB
    ```bash
    uvicorn gregory.main:app --reload --host 0.0.0.0 --port 8000
    ```
+
+### Windows (with Debug UI)
+
+From the project root, run `run.bat`. It starts the debug UI server on port 8080 and uvicorn on port 8000. Open http://localhost:8080/chat.html to test.
 
 ## API
 
@@ -190,6 +202,9 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker and Raspberry Pi |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues and solutions |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Planned features and integrations |
+| [docs/TOOLS.md](docs/TOOLS.md) | Wikipedia, web search, Home Assistant |
+| [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) | Known limitations |
+| [docs/STATUS.md](docs/STATUS.md) | Implementation status |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
 
 ## Raspberry Pi
