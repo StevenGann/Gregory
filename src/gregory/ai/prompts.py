@@ -87,6 +87,40 @@ Never state health, medical, safety, legal, or financial advice without verifyin
 
 If you cannot verify, say so. Do not invent or approximate."""
 
+HA_INSTRUCTION = """
+## Home Assistant control
+
+You can interact with the home automation system (lights, sensors, switches, etc.) using these markers:
+
+- **[HA_FIND: query]** — search entities by friendly name (e.g. "front door", "living room light"). Use this first when the user mentions a device by name and you don't know the exact entity_id.
+- **[HA_LIST]** or **[HA_LIST: domain]** — list entities. Use a domain (e.g. light, sensor, switch) to filter.
+- **[HA_STATE: entity_id]** — get current state of an entity.
+- **[HA_SERVICE: domain.service | key=value | ...]** — call a service.
+
+**When the user asks about something by name (e.g. "front door", "kitchen light"):** Use [HA_FIND: query] first to find the correct entity_id, then use [HA_STATE] or [HA_SERVICE] with that entity_id.
+
+**When the user says "turn it on/off" or "turn it back on":** Use the device name from the most recent exchange. If you just said "The Master Bedroom Table Lamp is now off", the user's "turn it back on" refers to that lamp—emit [HA_FIND: Master Bedroom Table Lamp] so the command can execute. Never reply "Done" without emitting HA markers; the command will not execute.
+
+**Important:** Emit HA markers in your FIRST response so the user gets the answer immediately. Do not say "I'll check" and wait for a follow-up—include the markers in the same reply.
+
+**If a user says a command didn't work:** Use [HA_FIND: device name] first to get the correct entity_id. Never guess entity_id from the friendly name (e.g. "Master Bedroom Table Lamp" is NOT light.master_bedroom_table_lamp—the real id may be light.smart_rgbtw_bulb_4). After finding the entity, use [HA_STATE: entity_id] or [HA_SERVICE: light.turn_on | entity_id=...] with the actual entity_id. If the state didn't change, the device may be offline or unresponsive—report what you see.
+
+**When [HA_FIND] returns "All lights in the system" (no match):** Use that list to help the user. Point out likely candidates by entity_id or friendly_name (e.g. "light.smart_rgbtw_bulb_4 might be the one in the master bedroom—shall I turn that off?"). Offer to act on a specific entity_id if the user confirms.
+
+**Examples:**
+- `[HA_FIND: front door]` — find entities matching "front door"
+- `[HA_FIND: living room light]` — find lights in living room
+
+- `[HA_LIST: light]` — list all lights
+- `[HA_STATE: sensor.temperature_living_room]` — read a sensor
+- `[HA_SERVICE: light.turn_on | entity_id=light.living_room]` — turn on a light
+- `[HA_SERVICE: light.turn_off | entity_id=light.living_room]` — turn off
+- `[HA_SERVICE: light.turn_on | entity_id=light.living_room | brightness=128 | color_temp_kelvin=3000]` — dim to 50% and set warm white (brightness 1-255, color_temp_kelvin typically 2000-6500)
+- `[HA_SERVICE: light.turn_on | entity_id=light.kitchen | rgb_color=255,128,0]` — set color (R,G,B 0-255)
+- `[HA_SERVICE: light.turn_on | entity_id=light.x | transition=2]` — fade over 2 seconds
+
+For lights: brightness (1-255), color_temp_kelvin (warm to cool), rgb_color (R,G,B). Use multiple markers if needed."""
+
 
 def build_system_prompt(
     notes_context: str,
@@ -98,6 +132,7 @@ def build_system_prompt(
     wikipedia_enabled: bool = False,
     web_search_enabled: bool = False,
     fact_check_strict: bool = False,
+    ha_enabled: bool = False,
 ) -> str:
     """Build system prompt with optional notes context, memory context, and instructions."""
     base = get_settings().system_prompt or DEFAULT_SYSTEM_PROMPT
@@ -130,6 +165,8 @@ Address your response to them. Do not greet or speak to other family members, pe
         parts.append(WIKIPEDIA_INSTRUCTION)
     if web_search_enabled:
         parts.append(WEB_SEARCH_INSTRUCTION)
+    if ha_enabled:
+        parts.append(HA_INSTRUCTION)
     if fact_check_strict and (wikipedia_enabled or web_search_enabled):
         parts.append(FACT_CHECK_STRICT_INSTRUCTION)
     if wikipedia_context.strip():

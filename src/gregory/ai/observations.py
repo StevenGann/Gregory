@@ -18,6 +18,12 @@ MEMORY_SEARCH_PATTERN = re.compile(r"\[MEMORY_SEARCH:\s*([^\]]*)\]", re.IGNORECA
 WIKIPEDIA_PATTERN = re.compile(r"\[WIKIPEDIA:\s*([^\]]*)\]", re.IGNORECASE)
 WEB_SEARCH_PATTERN = re.compile(r"\[WEB_SEARCH:\s*([^\]]*)\]", re.IGNORECASE)
 
+# Home Assistant markers
+HA_LIST_PATTERN = re.compile(r"\[HA_LIST(?:\s*:\s*([a-zA-Z0-9_]+))?\]", re.IGNORECASE)
+HA_FIND_PATTERN = re.compile(r"\[HA_FIND:\s*([^\]]+)\]", re.IGNORECASE)
+HA_STATE_PATTERN = re.compile(r"\[HA_STATE:\s*([^\]]+)\]", re.IGNORECASE)
+HA_SERVICE_PATTERN = re.compile(r"\[HA_SERVICE:\s*([^\]]+)\]", re.IGNORECASE)
+
 
 @dataclass
 class Observation:
@@ -51,6 +57,34 @@ class WikipediaSearchRequest:
 @dataclass
 class WebSearchRequest:
     """A web search request marker [WEB_SEARCH: query]."""
+
+    query: str
+
+
+@dataclass
+class HAListRequest:
+    """List entities marker [HA_LIST] or [HA_LIST: domain]."""
+
+    domain: str | None  # None = all entities
+
+
+@dataclass
+class HAStateRequest:
+    """Get state marker [HA_STATE: entity_id]."""
+
+    entity_id: str
+
+
+@dataclass
+class HAServiceRequest:
+    """Call service marker [HA_SERVICE: domain.service | key=val | ...]."""
+
+    params_str: str  # raw string for parse_service_params
+
+
+@dataclass
+class HAFindRequest:
+    """Find entities by name marker [HA_FIND: query]."""
 
     query: str
 
@@ -99,19 +133,28 @@ def extract_memory_markers(
     list[MemorySearchRequest],
     list[WikipediaSearchRequest],
     list[WebSearchRequest],
+    list["HAListRequest"],
+    list["HAFindRequest"],
+    list["HAStateRequest"],
+    list["HAServiceRequest"],
 ]:
-    """Extract [JOURNAL:], [MEMORY_SEARCH:], [WIKIPEDIA:], and [WEB_SEARCH:] markers.
+    """Extract [JOURNAL:], [MEMORY_SEARCH:], [WIKIPEDIA:], [WEB_SEARCH:], and HA markers.
 
     Called before extract_observations so the text passed to the existing
     function is already stripped of memory markers.
 
     Returns:
-        (cleaned_text, journal_entries, memory_search_requests, wikipedia_requests, web_search_requests)
+        (cleaned_text, journal_entries, memory_search_requests, wikipedia_requests,
+         web_search_requests, ha_list_requests, ha_find_requests, ha_state_requests, ha_service_requests)
     """
     journals: list[JournalEntry] = []
     searches: list[MemorySearchRequest] = []
     wiki_searches: list[WikipediaSearchRequest] = []
     web_searches: list[WebSearchRequest] = []
+    ha_list_reqs: list[HAListRequest] = []
+    ha_find_reqs: list[HAFindRequest] = []
+    ha_state_reqs: list[HAStateRequest] = []
+    ha_service_reqs: list[HAServiceRequest] = []
 
     def repl_journal(m: re.Match) -> str:
         content = m.group(1).strip()
@@ -137,8 +180,45 @@ def extract_memory_markers(
             web_searches.append(WebSearchRequest(query))
         return ""
 
+    def repl_ha_list(m: re.Match) -> str:
+        domain = m.group(1)
+        ha_list_reqs.append(HAListRequest(domain=domain.strip() if domain else None))
+        return ""
+
+    def repl_ha_find(m: re.Match) -> str:
+        query = m.group(1).strip()
+        if query:
+            ha_find_reqs.append(HAFindRequest(query=query))
+        return ""
+
+    def repl_ha_state(m: re.Match) -> str:
+        entity_id = m.group(1).strip()
+        if entity_id:
+            ha_state_reqs.append(HAStateRequest(entity_id=entity_id))
+        return ""
+
+    def repl_ha_service(m: re.Match) -> str:
+        params = m.group(1).strip()
+        if params:
+            ha_service_reqs.append(HAServiceRequest(params_str=params))
+        return ""
+
     cleaned = JOURNAL_PATTERN.sub(repl_journal, text)
     cleaned = MEMORY_SEARCH_PATTERN.sub(repl_search, cleaned)
     cleaned = WIKIPEDIA_PATTERN.sub(repl_wikipedia, cleaned)
     cleaned = WEB_SEARCH_PATTERN.sub(repl_web_search, cleaned)
-    return cleaned.strip(), journals, searches, wiki_searches, web_searches
+    cleaned = HA_LIST_PATTERN.sub(repl_ha_list, cleaned)
+    cleaned = HA_FIND_PATTERN.sub(repl_ha_find, cleaned)
+    cleaned = HA_STATE_PATTERN.sub(repl_ha_state, cleaned)
+    cleaned = HA_SERVICE_PATTERN.sub(repl_ha_service, cleaned)
+    return (
+        cleaned.strip(),
+        journals,
+        searches,
+        wiki_searches,
+        web_searches,
+        ha_list_reqs,
+        ha_find_reqs,
+        ha_state_reqs,
+        ha_service_reqs,
+    )

@@ -8,7 +8,7 @@ Markdown notes loaded as system context before each chat.
 |---|---|
 | `household.md` | Shared household context (schedules, rules) |
 | `gregory.md` | Gregory's self-notes — experiences, thoughts, preferences |
-| `services.md` | Local services and contacts — doctors, pharmacies, urgent care, emergency numbers |
+| `services.md` | Local services and contacts |
 | `entities/*.md` | Notes about things (e.g. `dog.md`, `house.md`, `garden.md`) |
 | `{user_id}.md` | Per-user notes (e.g. `alice.md`, `bob.md`) — preferences, reminders |
 

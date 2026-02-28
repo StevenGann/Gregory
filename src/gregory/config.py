@@ -154,6 +154,18 @@ class Settings(BaseSettings):
         default=True,
         description="Enable web search via [WEB_SEARCH: query] marker",
     )
+    ha_enabled: bool = Field(
+        default=False,
+        description="Enable Home Assistant integration via [HA_LIST], [HA_STATE], [HA_SERVICE] markers",
+    )
+    ha_base_url: str | None = Field(
+        default=None,
+        description="Home Assistant URL (e.g. http://192.168.0.x:8123)",
+    )
+    ha_access_token: str | None = Field(
+        default=None,
+        description="Home Assistant long-lived access token",
+    )
     fact_check_strict: bool = Field(
         default=True,
         description="Require verification before health, medical, safety, legal, or financial claims",
