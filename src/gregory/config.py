@@ -76,6 +76,18 @@ class Settings(BaseSettings):
         default=True,
         description="Ask highest-priority model which AI to use for each message",
     )
+    model_selection_provider: str | None = Field(
+        default=None,
+        description="Force model selection to use this provider: 'ollama', 'anthropic', 'gemini', or null to use first in model_priority.",
+    )
+    model_routing_skip_simple: bool = Field(
+        default=True,
+        description="When true, skip model selection for short/simple messages (greetings, thanks, ok) and use config order.",
+    )
+    follow_up_prefer_ollama: bool = Field(
+        default=False,
+        description="When true, try Ollama first for tool follow-up even if main response used a different provider.",
+    )
 
     # System prompt override (replaces default; use \\n for newlines in JSON/env)
     system_prompt: str | None = Field(
@@ -87,6 +99,12 @@ class Settings(BaseSettings):
     ollama_ensure_models: bool = Field(
         default=False,
         description="On startup, pull any configured Ollama models that are missing",
+    )
+    provider_retry_count: int = Field(
+        default=0,
+        ge=0,
+        le=3,
+        description="Number of retries for transient provider failures (timeout, 429, 503). 0=no retries.",
     )
 
     # AI providers (multi-endpoint, multi-model) - see docs/CONFIGURATION.md
@@ -107,6 +125,10 @@ class Settings(BaseSettings):
     heartbeat_notes_cleanup_minutes: float = Field(
         default=0,
         description="Interval in minutes for notes cleanup (random doc summarized by advanced model). 0=disabled",
+    )
+    heartbeat_premium_provider: str = Field(
+        default="last",
+        description="Which provider to use for premium tasks (cleanup, compression): 'last' (most capable), 'first', or 'ollama'.",
     )
 
     # Notes

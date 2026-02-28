@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 
 from gregory.ai import get_provider
-from gregory.ai.router import get_providers_for_message
+from gregory.ai.router import get_providers_for_message, get_providers_ordered
 from gregory.ai.observations import extract_memory_markers, extract_observations
 from gregory.ai.observations import HAFindRequest
 from gregory.ai.prompts import build_system_prompt
@@ -316,88 +316,95 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
 
             # HA_SERVICE failure fallback: AI used wrong entity_id, call failed. Retry via HA_FIND.
             action = _infer_ha_action(body.message, history)
-            if ha_service_reqs and action and service_results:
-                failed_idx = next(
-                    (i for i, (ok, msg) in enumerate(service_results) if not ok),
-                    None,
-                )
-                if failed_idx is not None:
-                    err_msg = service_results[failed_idx][1].lower()
-                    if "not found" in err_msg or "404" in err_msg or "entity" in err_msg:
-                        req = ha_service_reqs[failed_idx]
-                        parsed = parse_service_params(req.params_str)
-                        bad_entity_id = (
-                            parsed[2].get("entity_id")
-                            if parsed and isinstance(parsed[2].get("entity_id"), str)
-                            else None
+            if ha_service_reqs and action:
+                for failed_idx, (ok, msg) in enumerate(service_results):
+                    if ok:
+                        continue
+                    err_msg = msg.lower()
+                    if "not found" not in err_msg and "404" not in err_msg and "entity" not in err_msg:
+                        continue
+                    if failed_idx >= len(ha_service_reqs):
+                        continue
+                    req = ha_service_reqs[failed_idx]
+                    parsed = parse_service_params(req.params_str)
+                    bad_entity_id = (
+                        parsed[2].get("entity_id")
+                        if parsed and isinstance(parsed[2].get("entity_id"), str)
+                        else None
+                    )
+                    if not bad_entity_id and parsed and isinstance(parsed[2].get("entity_id"), list):
+                        bad_entity_id = parsed[2]["entity_id"][0] if parsed[2]["entity_id"] else None
+                    device = _extract_last_device_from_history(history)
+                    if not device and bad_entity_id:
+                        device = _entity_id_to_search_query(bad_entity_id)
+                    if not device:
+                        continue
+                    try:
+                        ents = await find_entities(
+                            settings.ha_base_url,
+                            settings.ha_access_token,
+                            device,
                         )
-                        if not bad_entity_id and parsed and isinstance(parsed[2].get("entity_id"), list):
-                            bad_entity_id = parsed[2]["entity_id"][0] if parsed[2]["entity_id"] else None
-                        device = _extract_last_device_from_history(history)
-                        if not device and bad_entity_id:
-                            device = _entity_id_to_search_query(bad_entity_id)
-                        if device:
-                            try:
-                                ents = await find_entities(
+                        if len(ents) == 1:
+                            ent = ents[0]
+                            entity_id = ent.get("entity_id")
+                            if entity_id and "." in entity_id:
+                                domain = entity_id.split(".", 1)[0]
+                                ok, msg = await call_service(
                                     settings.ha_base_url,
                                     settings.ha_access_token,
-                                    device,
+                                    domain,
+                                    action,
+                                    {"entity_id": entity_id},
                                 )
-                                if len(ents) == 1:
-                                    ent = ents[0]
-                                    entity_id = ent.get("entity_id")
-                                    if entity_id and "." in entity_id:
-                                        domain = entity_id.split(".", 1)[0]
-                                        ok, msg = await call_service(
-                                            settings.ha_base_url,
-                                            settings.ha_access_token,
-                                            domain,
-                                            action,
-                                            {"entity_id": entity_id},
-                                        )
-                                        service_results[failed_idx] = (ok, msg)
-                                        logger.info(
-                                            "[chat] HA_SERVICE fallback: retried with %s",
-                                            entity_id,
-                                        )
-                            except Exception as e:
-                                logger.warning(
-                                    "[chat] HA_SERVICE fallback failed for %r: %s",
-                                    device,
-                                    e,
+                                service_results[failed_idx] = (ok, msg)
+                                logger.info(
+                                    "[chat] HA_SERVICE fallback: retried with %s",
+                                    entity_id,
                                 )
+                    except Exception as e:
+                        logger.warning(
+                            "[chat] HA_SERVICE fallback failed for %r: %s",
+                            device,
+                            e,
+                        )
 
             # HA_STATE 404 fallback: AI guessed entity_id (e.g. light.master_bedroom_table_lamp), got 404.
             # Resolve via HA_FIND and auto-execute if we have turn intent.
             action = _infer_ha_action(body.message, history)
-            for i, state in enumerate(state_results):
-                if state and state.get("error") == "not found" and action and not ha_service_reqs:
+            if action and not ha_service_reqs:
+                for i, state in enumerate(state_results):
+                    if not state or state.get("error") != "not found":
+                        continue
                     failed_entity_id = ha_state_reqs[i].entity_id if i < len(ha_state_reqs) else ""
                     device = _extract_last_device_from_history(history)
                     if not device and failed_entity_id:
                         device = _entity_id_to_search_query(failed_entity_id)
-                    if device and not ha_find_reqs:
-                        try:
-                            ents = await find_entities(
-                                settings.ha_base_url,
-                                settings.ha_access_token,
+                    if not device:
+                        continue
+                    if device in find_results or any(
+                        r.query == device for r in ha_find_reqs
+                    ):
+                        continue
+                    try:
+                        ents = await find_entities(
+                            settings.ha_base_url,
+                            settings.ha_access_token,
+                            device,
+                        )
+                        if ents:
+                            ha_find_reqs.append(HAFindRequest(query=device))
+                            find_results[device] = ents
+                            logger.info(
+                                "[chat] HA_STATE 404 fallback: resolved %r via HA_FIND",
                                 device,
                             )
-                            if ents:
-                                ha_find_reqs = [HAFindRequest(query=device)]
-                                find_results[device] = ents
-                                logger.info(
-                                    "[chat] HA_STATE 404 fallback: resolved %r via HA_FIND",
-                                    device,
-                                )
-                                break
-                        except Exception as e:
-                            logger.warning(
-                                "[chat] HA_STATE 404 fallback find failed for %r: %s",
-                                device,
-                                e,
-                            )
-                    break
+                    except Exception as e:
+                        logger.warning(
+                            "[chat] HA_STATE 404 fallback find failed for %r: %s",
+                            device,
+                            e,
+                        )
 
             # Auto-execute turn_on/turn_off when HA_FIND returns exactly one match and user intent is clear
             if (
@@ -500,8 +507,17 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                 "Never output only markers or leave the response blank. "
                 + markers_note
             )
+            follow_up_provider = successful_provider
+            if settings.follow_up_prefer_ollama:
+                all_providers = get_providers_ordered()
+                ollama_first = next(
+                    (p for name, p in all_providers if "ollama" in name.lower()),
+                    None,
+                )
+                if ollama_first:
+                    follow_up_provider = ollama_first
             try:
-                response_text = await successful_provider.generate(
+                response_text = await follow_up_provider.generate(
                     prompt=body.message,
                     history=history,
                     system_context=follow_up_system,
@@ -520,6 +536,36 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                 ) = extract_memory_markers(response_text)
             except Exception as e:
                 logger.warning("[chat] Search follow-up call failed: %s", e)
+                if follow_up_provider != successful_provider:
+                    try:
+                        response_text = await successful_provider.generate(
+                            prompt=body.message,
+                            history=history,
+                            system_context=follow_up_system,
+                        )
+                        logger.info("[chat] Search/HA follow-up: fallback provider succeeded")
+                        (
+                            response_text,
+                            journal_entries,
+                            memory_searches,
+                            wikipedia_searches,
+                            web_searches,
+                            ha_list_reqs,
+                            ha_find_reqs,
+                            ha_state_reqs,
+                            ha_service_reqs,
+                        ) = extract_memory_markers(response_text)
+                    except Exception as e2:
+                        logger.warning(
+                            "[chat] Search follow-up fallback also failed: %s", e2
+                        )
+                        response_text = None
+                # response_text: from fallback success, None (fallback failed), or original (same-provider fail)
+                if not response_text or not response_text.strip():
+                    response_text = (
+                        "I found results but couldn't synthesize an answer. "
+                        "Please try again—the search or action may have succeeded."
+                    )
 
     # Process journal entries and memory searches (from final response, after any Wikipedia follow-up)
     if settings.memory_enabled:

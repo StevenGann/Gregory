@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from gregory.ai.providers.base import AIProvider, ChatMessage
+from gregory.ai.providers.base import AIProvider, ChatMessage, _retry_async
 from gregory.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -44,17 +44,21 @@ class OllamaProvider(AIProvider):
         }
 
         url = f"{self._base_url}/api/chat"
-        async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
-            try:
+
+        async def _do_request():
+            async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
                 r = await client.post(url, json=body)
                 r.raise_for_status()
                 data = r.json()
                 msg = data.get("message", {})
                 content = msg.get("content", "")
                 return content.strip() if isinstance(content, str) else ""
-            except httpx.HTTPError as e:
-                logger.error("Ollama request failed: %s", e)
-                raise
-            except Exception as e:
-                logger.error("Ollama error: %s", e)
-                raise
+
+        try:
+            return await _retry_async(_do_request)
+        except httpx.HTTPError as e:
+            logger.error("Ollama request failed: %s", e)
+            raise
+        except Exception as e:
+            logger.error("Ollama error: %s", e)
+            raise

@@ -4,7 +4,7 @@ import logging
 
 from anthropic import AsyncAnthropic
 
-from gregory.ai.providers.base import AIProvider, ChatMessage
+from gregory.ai.providers.base import AIProvider, ChatMessage, _retry_async
 from gregory.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ class ClaudeProvider(AIProvider):
             messages.append({"role": m.role, "content": m.content})
         messages.append({"role": "user", "content": prompt})
 
-        try:
+        async def _do_request():
             response = await self._client.messages.create(
                 model=self._model,
                 max_tokens=ANTHROPIC_MAX_TOKENS,
@@ -44,6 +44,9 @@ class ClaudeProvider(AIProvider):
                 if hasattr(block, "text"):
                     return block.text.strip()
             return ""
+
+        try:
+            return await _retry_async(_do_request)
         except Exception as e:
             logger.error("Claude request failed: %s", e)
             raise

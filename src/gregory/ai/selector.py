@@ -7,6 +7,7 @@ import re
 from gregory.ai.config import ResolvedProvider, resolve_providers_ordered
 from gregory.ai.prompts import MODEL_SELECTION_SYSTEM, build_model_selection_prompt
 from gregory.ai.router import _instantiate
+from gregory.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,23 @@ async def select_model_for_message(user_message: str) -> str | None:
         logger.info("[model_select] Only one provider (%s), skipping selection", resolved[0].model)
         return resolved[0].model  # Only one option
 
-    selection_provider = resolved[0]
+    settings = get_settings()
+    selection_provider = None
+    if settings.model_selection_provider:
+        pt = settings.model_selection_provider.strip().lower()
+        if pt in ("ollama", "anthropic", "gemini"):
+            for r in resolved:
+                if r.provider_type == pt:
+                    selection_provider = r
+                    break
+        if selection_provider is None:
+            logger.warning(
+                "[model_select] model_selection_provider=%s not found, using default order",
+                settings.model_selection_provider,
+            )
+            return None
+    else:
+        selection_provider = resolved[0]
     provider_impl = _instantiate(selection_provider)
     if provider_impl is None:
         return None
@@ -79,6 +96,11 @@ async def select_model_for_message(user_message: str) -> str | None:
             prompt=prompt,
             history=[],
             system_context=MODEL_SELECTION_SYSTEM,
+        )
+        logger.debug(
+            "[model_select] Raw selection response: %r (valid ids: %s)",
+            response.strip()[:200],
+            available,
         )
         valid_ids = {r.model for r in resolved}
         chosen = _parse_model_id(response, valid_ids)

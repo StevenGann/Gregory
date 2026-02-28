@@ -1,5 +1,6 @@
 """AI provider and model configuration."""
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from gregory.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class ModelInfo(BaseModel):
@@ -68,6 +71,22 @@ class ResolvedProvider:
     notes: str
 
 
+def get_ollama_url_for_embeddings() -> str | None:
+    """Resolve Ollama URL for memory embeddings. Checks ollama_base_url first, then ai_providers."""
+    settings = get_settings()
+    if settings.ollama_base_url:
+        return settings.ollama_base_url.rstrip("/")
+    ai_config = get_ai_providers_config()
+    if ai_config and ai_config.ollama:
+        first = ai_config.ollama[0]
+        url = getattr(first, "url", None) or (
+            first.get("url") if isinstance(first, dict) else None
+        )
+        if url:
+            return url.rstrip("/")
+    return None
+
+
 def _resolve_api_key(instance: AnthropicInstance | GeminiInstance) -> str | None:
     """Resolve API key from api_key or api_key_env."""
     if instance.api_key:
@@ -87,7 +106,11 @@ def get_ai_providers_config() -> AIProvidersConfig | None:
         return None
     try:
         return AIProvidersConfig.model_validate(raw)
-    except Exception:
+    except Exception as e:
+        logger.warning(
+            "[config] ai_providers validation failed, falling back to legacy config: %s",
+            e,
+        )
         return None
 
 

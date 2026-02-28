@@ -5,7 +5,7 @@ import logging
 from google import genai
 from google.genai import types
 
-from gregory.ai.providers.base import AIProvider, ChatMessage
+from gregory.ai.providers.base import AIProvider, ChatMessage, _retry_async
 from gregory.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class GeminiProvider(AIProvider):
             or "You are Gregory, a friendly and helpful house AI assistant.",
         )
 
-        try:
+        async def _do_request():
             chat = self._client.aio.chats.create(
                 model=self._model_name,
                 config=config,
@@ -48,6 +48,9 @@ class GeminiProvider(AIProvider):
             )
             response = await chat.send_message(prompt)
             return (response.text or "").strip()
+
+        try:
+            return await _retry_async(_do_request)
         except Exception as e:
             logger.error("Gemini request failed: %s", e)
             raise

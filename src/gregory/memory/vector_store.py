@@ -7,6 +7,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from gregory.ai.config import get_ollama_url_for_embeddings
 from gregory.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -46,18 +47,16 @@ class MemoryVectorStore:
             self._client = chromadb.PersistentClient(path=str(self._chroma_path))
 
             settings = get_settings()
-            if (
-                settings.memory_embedding_provider == "ollama"
-                and settings.ollama_base_url
-            ):
+            ollama_url = get_ollama_url_for_embeddings()
+            if settings.memory_embedding_provider == "ollama" and ollama_url:
                 ef = embedding_functions.OllamaEmbeddingFunction(
-                    url=settings.ollama_base_url,
+                    url=ollama_url,
                     model_name=settings.memory_embedding_model,
                 )
                 logger.info(
                     "[memory] Using Ollama embeddings: %s at %s",
                     settings.memory_embedding_model,
-                    settings.ollama_base_url,
+                    ollama_url,
                 )
             else:
                 ef = embedding_functions.DefaultEmbeddingFunction()

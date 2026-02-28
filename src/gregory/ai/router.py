@@ -1,10 +1,27 @@
 """AI provider router - selects provider based on config."""
 
 import logging
+import re
 
 from gregory.ai.config import ResolvedProvider, resolve_providers_ordered
 
 logger = logging.getLogger(__name__)
+
+_SIMPLE_MESSAGE_PATTERNS = (
+    r"^(hi|hey|hello|thanks|thank you|ok|okay|yes|no|bye|goodbye)[\.!?\s]*$",
+    r"^[a-z]{1,20}$",
+)
+
+
+def _is_simple_message(msg: str) -> bool:
+    """Return True if message is a short greeting/acknowledgment (skip model routing)."""
+    m = msg.strip().lower()
+    if len(m) > 50:
+        return False
+    for pat in _SIMPLE_MESSAGE_PATTERNS:
+        if re.match(pat, m):
+            return True
+    return False
 from gregory.ai.providers.base import AIProvider
 from gregory.ai.providers.claude import ClaudeProvider
 from gregory.ai.providers.gemini import GeminiProvider
@@ -54,7 +71,9 @@ async def get_providers_for_message(message: str) -> list[tuple[str, AIProvider]
         return []
 
     settings = get_settings()
-    if settings.model_routing_enabled:
+    if settings.model_routing_enabled and not (
+        settings.model_routing_skip_simple and _is_simple_message(message)
+    ):
         from gregory.ai.selector import reorder_providers_by_model, select_model_for_message
 
         logger.info(

@@ -8,6 +8,8 @@ Gregory supports three configuration sources, in order of precedence (later over
 
 When running in Docker, use `.env` or environment variables. When running locally, `config.json` is often more convenient.
 
+**Note:** Settings are loaded once at startup. A restart is required to pick up changes to the config file, `.env`, or environment variables.
+
 ## Variables
 
 ### General
@@ -129,6 +131,8 @@ When `ai_providers` is set, it replaces the legacy flat config for provider sele
 ### Model routing
 
 When `model_routing_enabled` is true (default), Gregory asks the **highest-priority model** (e.g. llama3.2) which AI should handle each message before responding. The selector sees the user's message and the list of available models with their notes, then recommends one. Gregory uses that model for the actual chat, falling back to others if it fails. This reduces cost by steering simple tasks to local/free models and complex tasks to stronger models.
+
+To minimize cost, place an Ollama model first in `model_priority`. Model selection uses the first model, so an Ollama-first order keeps selection free. Or set `model_selection_provider` to `"ollama"` to force the selector to always use Ollama for the selection call, regardless of `model_priority` order.
 
 ```mermaid
 flowchart TB

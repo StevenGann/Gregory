@@ -4,7 +4,7 @@ import asyncio
 import logging
 import random
 
-from gregory.ai.config import resolve_providers_ordered
+from gregory.ai.config import ResolvedProvider, resolve_providers_ordered
 from gregory.ai.prompts import (
     HEARTBEAT_NOTES_CLEANUP_SYSTEM,
     HEARTBEAT_REFLECTION_ANSWER_SYSTEM,
@@ -28,66 +28,82 @@ def _get_provider_for_reflection():
     return None, None
 
 
-def _get_provider_for_cleanup():
-    """Premium provider for cleanup: last in order (typically Claude/Gemini)."""
+def _get_cleanup_provider_order():
+    """Return provider order for premium tasks (cleanup, compression)."""
+    settings = get_settings()
+    mode = (settings.heartbeat_premium_provider or "last").strip().lower()
     resolved = resolve_providers_ordered()
-    for r in reversed(resolved):
+    if mode == "first":
+        return resolved
+    if mode == "ollama":
+        order = [r for r in resolved if r.provider_type == "ollama"]
+        return order if order else resolved
+    return list(reversed(resolved))
+
+
+async def _try_providers_until_success(
+    prompt: str,
+    system_context: str,
+    history: list | None = None,
+    provider_order: list[ResolvedProvider] | None = None,
+) -> tuple[str | None, str | None]:
+    """Try providers in order. Returns (response_text, provider_name) or (None, None)."""
+    resolved = provider_order or resolve_providers_ordered()
+    history = history or []
+    for r in resolved:
         p = _instantiate(r)
-        if p is not None:
-            return p, r.display_name
+        if p is None:
+            continue
+        try:
+            out = await p.generate(
+                prompt=prompt, history=history, system_context=system_context
+            )
+            if out and out.strip():
+                return out.strip(), r.display_name
+        except Exception as e:
+            logger.warning("[heartbeat] Provider %s failed: %s", r.display_name, e)
     return None, None
 
 
 async def _run_reflection() -> None:
     """Generate a self-reflection question, answer it, append to gregory.md."""
-    provider, name = _get_provider_for_reflection()
-    if provider is None:
-        logger.warning("[heartbeat] No provider for reflection, skipping")
+    question_response, _ = await _try_providers_until_success(
+        prompt=HEARTBEAT_REFLECTION_QUESTION,
+        system_context="",
+    )
+    if not question_response:
+        logger.warning("[heartbeat] No provider succeeded for reflection question, skipping")
         return
+
+    question = question_response.strip().strip('"\'')
+    if not question:
+        logger.warning("[heartbeat] Empty reflection question, skipping")
+        return
+
+    logger.info("[heartbeat] Reflection question: %s", question[:80])
 
     notes_svc = NotesService()
     all_notes = load_all_notes()
+    answer, name = await _try_providers_until_success(
+        prompt=f"Reflection question: {question}",
+        system_context=f"{HEARTBEAT_REFLECTION_ANSWER_SYSTEM}\n\n## Your notes\n{all_notes or '(none yet)'}",
+    )
+    if not answer:
+        logger.warning("[heartbeat] No provider succeeded for reflection answer, skipping")
+        return
 
-    try:
-        # 1. Generate question
-        question_response = await provider.generate(
-            prompt=HEARTBEAT_REFLECTION_QUESTION,
-            history=[],
-            system_context="",
-        )
-        question = question_response.strip().strip('"\'')
-        if not question:
-            logger.warning("[heartbeat] Empty reflection question, skipping")
-            return
+    answer = answer.strip()
+    if not answer:
+        logger.warning("[heartbeat] Empty reflection answer, skipping")
+        return
 
-        logger.info("[heartbeat] Reflection question: %s", question[:80])
-
-        # 2. Answer using Gregory's notes
-        answer = await provider.generate(
-            prompt=f"Reflection question: {question}",
-            history=[],
-            system_context=f"{HEARTBEAT_REFLECTION_ANSWER_SYSTEM}\n\n## Your notes\n{all_notes or '(none yet)'}",
-        )
-        answer = answer.strip()
-        if not answer:
-            logger.warning("[heartbeat] Empty reflection answer, skipping")
-            return
-
-        # 3. Append to gregory.md
-        line = f"- Reflection on \"{question[:60]}{'...' if len(question) > 60 else ''}\": {answer}"
-        notes_svc.append_gregory(line)
-        logger.info("[heartbeat] Appended reflection to gregory.md via %s", name)
-    except Exception as e:
-        logger.exception("[heartbeat] Reflection failed: %s", e)
+    line = f"- Reflection on \"{question[:60]}{'...' if len(question) > 60 else ''}\": {answer}"
+    notes_svc.append_gregory(line)
+    logger.info("[heartbeat] Appended reflection to gregory.md via %s", name)
 
 
 async def _run_notes_cleanup() -> None:
     """Pick a random note document, summarize/clean it with premium model."""
-    provider, name = _get_provider_for_cleanup()
-    if provider is None:
-        logger.warning("[heartbeat] No provider for notes cleanup, skipping")
-        return
-
     notes_svc = NotesService()
     docs = notes_svc.list_note_documents()
     if not docs:
@@ -99,20 +115,21 @@ async def _run_notes_cleanup() -> None:
     if not content.strip():
         return
 
-    try:
-        cleaned = await provider.generate(
-            prompt=f"Clean up these notes:\n\n{content}",
-            history=[],
-            system_context=HEARTBEAT_NOTES_CLEANUP_SYSTEM,
-        )
-        cleaned = cleaned.strip()
-        if cleaned:
-            notes_svc.write_document(doc_type, doc_id, cleaned)
-            logger.info("[heartbeat] Cleaned %s/%s via %s", doc_type, doc_id, name)
-        else:
-            logger.warning("[heartbeat] Empty cleanup output for %s/%s", doc_type, doc_id)
-    except Exception as e:
-        logger.exception("[heartbeat] Notes cleanup failed for %s/%s: %s", doc_type, doc_id, e)
+    cleaned, name = await _try_providers_until_success(
+        prompt=f"Clean up these notes:\n\n{content}",
+        system_context=HEARTBEAT_NOTES_CLEANUP_SYSTEM,
+        provider_order=_get_cleanup_provider_order(),
+    )
+    if not cleaned:
+        logger.warning("[heartbeat] No provider succeeded for notes cleanup %s/%s", doc_type, doc_id)
+        return
+
+    cleaned = cleaned.strip()
+    if cleaned:
+        notes_svc.write_document(doc_type, doc_id, cleaned)
+        logger.info("[heartbeat] Cleaned %s/%s via %s", doc_type, doc_id, name)
+    else:
+        logger.warning("[heartbeat] Empty cleanup output for %s/%s", doc_type, doc_id)
 
 
 async def _run_daily_summary() -> None:
@@ -125,11 +142,6 @@ async def _run_daily_summary() -> None:
 
     from gregory.memory.service import get_journal_service, get_vector_store
 
-    provider, name = _get_provider_for_reflection()
-    if provider is None:
-        logger.warning("[heartbeat] No provider for daily summary, skipping")
-        return
-
     journal = get_journal_service()
     today_content = journal.read_today()
     if not today_content.strip():
@@ -139,37 +151,36 @@ async def _run_daily_summary() -> None:
         logger.info("[heartbeat] Daily summary: summary already exists for today, skipping")
         return
 
-    try:
-        summary = await provider.generate(
-            prompt=f"Summarize today's journal entries in 2-3 sentences:\n\n{today_content}",
-            history=[],
-            system_context=(
-                "You are Gregory, a house AI. Summarize your journal entries "
-                "concisely in first person, capturing the key events and observations."
-            ),
-        )
-        summary = summary.strip()
-        if not summary:
-            logger.warning("[heartbeat] Empty daily summary response, skipping")
-            return
+    summary, name = await _try_providers_until_success(
+        prompt=f"Summarize today's journal entries in 2-3 sentences:\n\n{today_content}",
+        system_context=(
+            "You are Gregory, a house AI. Summarize your journal entries "
+            "concisely in first person, capturing the key events and observations."
+        ),
+    )
+    if not summary:
+        logger.warning("[heartbeat] No provider succeeded for daily summary, skipping")
+        return
 
-        today = date.today()
-        journal.write_summary(today, summary)
+    summary = summary.strip()
+    if not summary:
+        logger.warning("[heartbeat] Empty daily summary response, skipping")
+        return
 
-        # Index the summary entry
-        ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-        doc_id = f"{today.isoformat()}::summary::{ts_ms}"
-        vector = get_vector_store()
-        await vector.index_entry(
-            doc_id=doc_id,
-            text=summary,
-            entry_date=today,
-            user_id="",
-            entry_type="summary",
-        )
-        logger.info("[heartbeat] Daily summary written and indexed via %s", name)
-    except Exception as e:
-        logger.exception("[heartbeat] Daily summary failed: %s", e)
+    today = date.today()
+    journal.write_summary(today, summary)
+
+    ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    doc_id = f"{today.isoformat()}::summary::{ts_ms}"
+    vector = get_vector_store()
+    await vector.index_entry(
+        doc_id=doc_id,
+        text=summary,
+        entry_date=today,
+        user_id="",
+        entry_type="summary",
+    )
+    logger.info("[heartbeat] Daily summary written and indexed via %s", name)
 
 
 async def _run_memory_compression() -> None:
@@ -180,11 +191,6 @@ async def _run_memory_compression() -> None:
 
     from gregory.memory.service import get_journal_service, get_vector_store
 
-    provider, name = _get_provider_for_cleanup()
-    if provider is None:
-        logger.warning("[heartbeat] No provider for memory compression, skipping")
-        return
-
     journal = get_journal_service()
     vector = get_vector_store()
     months = journal.list_months_with_daily_files()
@@ -193,8 +199,8 @@ async def _run_memory_compression() -> None:
         logger.info("[heartbeat] Memory compression: no complete months to compress")
         return
 
+    provider_order = _get_cleanup_provider_order()
     for year, month in months:
-        # Skip if already compressed
         if journal.compressed_path(year, month).exists():
             logger.debug("[heartbeat] Compression: %04d-%02d already compressed, skipping", year, month)
             continue
@@ -204,43 +210,41 @@ async def _run_memory_compression() -> None:
             continue
 
         logger.info("[heartbeat] Compressing journal for %04d-%02d", year, month)
-        try:
-            summary = await provider.generate(
-                prompt=(
-                    f"Compress this monthly journal into a concise Markdown document "
-                    f"preserving all important facts, events, and observations. "
-                    f"Use topic headers. Output only the Markdown:\n\n{raw_content}"
-                ),
-                history=[],
-                system_context=(
-                    "You are Gregory, a house AI. Create a well-structured monthly "
-                    "summary that preserves all meaningful information from the daily entries."
-                ),
-            )
-            summary = summary.strip()
-            if not summary:
-                logger.warning("[heartbeat] Empty compression output for %04d-%02d, skipping", year, month)
-                continue
+        summary, name = await _try_providers_until_success(
+            prompt=(
+                f"Compress this monthly journal into a concise Markdown document "
+                f"preserving all important facts, events, and observations. "
+                f"Use topic headers. Output only the Markdown:\n\n{raw_content}"
+            ),
+            system_context=(
+                "You are Gregory, a house AI. Create a well-structured monthly "
+                "summary that preserves all meaningful information from the daily entries."
+            ),
+            provider_order=provider_order,
+        )
+        if not summary:
+            logger.warning("[heartbeat] No provider succeeded for %04d-%02d, skipping", year, month)
+            continue
 
-            # Write compressed file
-            header = f"# {year:04d}-{month:02d}\n\n"
-            journal.write_compressed(year, month, header + summary)
+        summary = summary.strip()
+        if not summary:
+            logger.warning("[heartbeat] Empty compression output for %04d-%02d, skipping", year, month)
+            continue
 
-            # Update vector index: remove daily entries, add compressed summary
-            await vector.delete_entries_for_month(year, month)
-            await vector.index_compressed_month(year, month, summary)
+        header = f"# {year:04d}-{month:02d}\n\n"
+        journal.write_compressed(year, month, header + summary)
 
-            # Delete daily files
-            deleted = journal.delete_daily_files_for_month(year, month)
-            logger.info(
-                "[heartbeat] Compressed %04d-%02d (%d daily files deleted) via %s",
-                year,
-                month,
-                len(deleted),
-                name,
-            )
-        except Exception as e:
-            logger.exception("[heartbeat] Compression failed for %04d-%02d: %s", year, month, e)
+        await vector.delete_entries_for_month(year, month)
+        await vector.index_compressed_month(year, month, summary)
+
+        deleted = journal.delete_daily_files_for_month(year, month)
+        logger.info(
+            "[heartbeat] Compressed %04d-%02d (%d daily files deleted) via %s",
+            year,
+            month,
+            len(deleted),
+            name,
+        )
 
 
 async def _run_periodic(
