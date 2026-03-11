@@ -1,6 +1,8 @@
 """Notes service - read/write Markdown notes per user, household, Gregory, and entities."""
 
 import logging
+import re
+from datetime import date
 from pathlib import Path
 
 from gregory.config import get_settings
@@ -11,6 +13,7 @@ HOUSEHOLD_FILE = "household.md"
 GREGORY_FILE = "gregory.md"
 SERVICES_FILE = "services.md"
 ENTITIES_DIR = "entities"
+KNOWLEDGE_DIR = "knowledge"
 
 # Note types that are not per-user (excluded from list_users_from_notes)
 _RESERVED_STEMS = frozenset({"household", "gregory", "services"})
@@ -260,3 +263,143 @@ class NotesService:
             if f.is_file() and f.suffix == ".md" and f.stem not in _RESERVED_STEMS:
                 users.append(f.stem)
         return sorted(users)
+
+    # ------------------------------------------------------------------
+    # Knowledge notes
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _slugify(title: str) -> str:
+        """Convert a title to a filesystem-safe slug.
+
+        E.g. "Quantum Computing Basics" -> "quantum_computing_basics"
+        """
+        slug = title.lower().strip()
+        slug = re.sub(r"[^\w\s-]", "", slug)
+        slug = re.sub(r"[\s-]+", "_", slug)
+        slug = slug.strip("_")
+        return slug or "untitled"
+
+    def _knowledge_dir(self) -> Path:
+        """Path to knowledge notes directory."""
+        return self._base / KNOWLEDGE_DIR
+
+    def _knowledge_path(self, title: str) -> Path:
+        """Path to a knowledge note file for the given title."""
+        slug = self._slugify(title)
+        return self._knowledge_dir() / f"{slug}.md"
+
+    def _make_knowledge_frontmatter(
+        self,
+        title: str,
+        tags: list[str] | None = None,
+        sources: list[str] | None = None,
+        summary: str = "",
+    ) -> str:
+        """Build YAML frontmatter for a new knowledge note."""
+        today = date.today().isoformat()
+        lines = [
+            "---",
+            f"title: {title}",
+            f"tags: [{', '.join(tags or [])}]",
+            "sources:",
+        ]
+        for src in (sources or []):
+            lines.append(f"  - {src}")
+        if summary:
+            lines.append(f"summary: {summary}")
+        lines += [
+            f"date_created: {today}",
+            f"date_updated: {today}",
+            "---",
+            "",
+        ]
+        return "\n".join(lines)
+
+    def read_knowledge(self, title: str) -> str:
+        """Read a knowledge note by title. Returns empty string if not found."""
+        p = self._knowledge_path(title)
+        if not p.exists():
+            return ""
+        try:
+            return p.read_text(encoding="utf-8")
+        except OSError as e:
+            logger.warning("Could not read knowledge note %r: %s", title, e)
+            return ""
+
+    def write_knowledge(
+        self,
+        title: str,
+        content: str,
+        tags: list[str] | None = None,
+        sources: list[str] | None = None,
+        summary: str = "",
+    ) -> None:
+        """Write (overwrite) a knowledge note entirely, including frontmatter."""
+        p = self._knowledge_path(title)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        frontmatter = self._make_knowledge_frontmatter(title, tags, sources, summary)
+        body = content.strip()
+        try:
+            p.write_text(frontmatter + body + "\n", encoding="utf-8")
+            logger.info("[notes] Wrote knowledge note: %s", title)
+        except OSError as e:
+            logger.warning("Could not write knowledge note %r: %s", title, e)
+
+    def append_knowledge(self, title: str, content: str) -> None:
+        """Append content to an existing knowledge note (or create it if missing)."""
+        p = self._knowledge_path(title)
+        if not p.exists():
+            self.write_knowledge(title, content)
+            return
+        p.parent.mkdir(parents=True, exist_ok=True)
+        # Update date_updated in frontmatter
+        today = date.today().isoformat()
+        try:
+            existing = p.read_text(encoding="utf-8")
+            updated = re.sub(
+                r"(date_updated:\s*)[\d-]+",
+                rf"\g<1>{today}",
+                existing,
+            )
+            addition = content.strip()
+            if not updated.endswith("\n"):
+                updated += "\n"
+            p.write_text(updated + "\n" + addition + "\n", encoding="utf-8")
+            logger.info("[notes] Appended to knowledge note: %s", title)
+        except OSError as e:
+            logger.warning("Could not append to knowledge note %r: %s", title, e)
+
+    def list_knowledge(self) -> list[str]:
+        """List titles of all knowledge notes (derived from filenames)."""
+        kdir = self._knowledge_dir()
+        if not kdir.exists():
+            return []
+        titles: list[str] = []
+        for f in sorted(kdir.iterdir()):
+            if f.is_file() and f.suffix == ".md":
+                # Try to read title from frontmatter, fall back to stem
+                try:
+                    text = f.read_text(encoding="utf-8")
+                    m = re.search(r"^title:\s*(.+)$", text, re.MULTILINE)
+                    titles.append(m.group(1).strip() if m else f.stem.replace("_", " ").title())
+                except OSError:
+                    titles.append(f.stem.replace("_", " ").title())
+        return titles
+
+    def read_all_knowledge(self) -> dict[str, str]:
+        """Read all knowledge notes. Returns {title: content}."""
+        kdir = self._knowledge_dir()
+        if not kdir.exists():
+            return {}
+        result: dict[str, str] = {}
+        for f in sorted(kdir.iterdir()):
+            if f.is_file() and f.suffix == ".md":
+                try:
+                    text = f.read_text(encoding="utf-8").strip()
+                    m = re.search(r"^title:\s*(.+)$", text, re.MULTILINE)
+                    title = m.group(1).strip() if m else f.stem.replace("_", " ").title()
+                    result[title] = text
+                except OSError:
+                    pass
+        return result

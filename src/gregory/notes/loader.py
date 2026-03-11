@@ -1,5 +1,6 @@
 """Load notes as context for AI chat."""
 
+from gregory.config import get_settings
 from gregory.notes.service import NotesService
 
 
@@ -27,7 +28,12 @@ def load_all_notes() -> str:
 
 
 def load_notes_for_chat(user_id: str) -> str:
-    """Load household + Gregory + services + entities + user notes as context for chat."""
+    """Load household + Gregory + services + entities + user notes as context for chat.
+
+    When ``wikilinks_enabled`` is True (from settings), scans all loaded note content
+    for ``[[wikilinks]]`` and appends brief summaries of any resolved linked notes.
+    """
+    settings = get_settings()
     notes = NotesService()
     household = notes.read_household()
     gregory_notes = notes.read_gregory()
@@ -49,4 +55,20 @@ def load_notes_for_chat(user_id: str) -> str:
         parts.append(f"## Notes about {user_id}\n" + user.strip())
     if not parts:
         return ""
-    return "\n\n".join(parts)
+
+    primary_context = "\n\n".join(parts)
+
+    # Wikilink enrichment: append summaries of linked notes
+    wikilinks_enabled = getattr(settings, "wikilinks_enabled", False)
+    wikilink_depth = getattr(settings, "wikilink_depth", 1)
+    if wikilinks_enabled and wikilink_depth > 0:
+        from gregory.notes.links import get_link_summaries
+        summaries = get_link_summaries(primary_context, notes, max_depth=wikilink_depth)
+        if summaries:
+            ref_lines: list[str] = ["## Referenced notes"]
+            for title, summary in summaries.items():
+                if summary:
+                    ref_lines.append(f"\n### {title}\n{summary}")
+            primary_context = primary_context + "\n\n" + "\n".join(ref_lines)
+
+    return primary_context

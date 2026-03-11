@@ -5,13 +5,32 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, Tuple, Type
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import (
     BaseSettings,
     JsonConfigSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+
+
+class MCPServerConfig(BaseModel):
+    """Configuration for a single MCP server connection."""
+
+    name: str = Field(description="Human-readable server name, used as prefix for tool skill names")
+    transport: Literal["stdio", "sse", "http"] = Field(
+        default="stdio",
+        description="Transport protocol: 'stdio' for local subprocess, 'sse'/'http' for remote",
+    )
+    command: list[str] = Field(
+        default=[],
+        description="Command + args to launch the server (stdio transport only). E.g. ['npx', '-y', '@modelcontextprotocol/server-filesystem', '/home']",
+    )
+    url: str = Field(
+        default="",
+        description="Server URL for SSE/HTTP transport. E.g. 'http://localhost:3000/sse'",
+    )
+    enabled: bool = Field(default=True, description="Set to false to skip this server on startup")
 
 
 class Settings(BaseSettings):
@@ -167,6 +186,18 @@ class Settings(BaseSettings):
         description="Embedding model name (used when memory_embedding_provider='ollama')",
     )
 
+    # Skills registry
+    skills_enabled: list[str] = Field(
+        default=[],
+        description="Allowlist of skill names to enable (empty = all enabled). E.g. ['wikipedia', 'web_search']",
+    )
+
+    # MCP (Model Context Protocol) server connections
+    mcp_servers: list[MCPServerConfig] = Field(
+        default=[],
+        description="List of MCP servers to connect to on startup. Each server's tools become available as skills.",
+    )
+
     # Tools (external capabilities)
     wikipedia_enabled: bool = Field(
         default=True,
@@ -191,6 +222,20 @@ class Settings(BaseSettings):
     fact_check_strict: bool = Field(
         default=True,
         description="Require verification before health, medical, safety, legal, or financial claims",
+    )
+    knowledge_enabled: bool = Field(
+        default=True,
+        description="Enable [KNOWLEDGE: title | content] marker for Gregory to create/update knowledge notes",
+    )
+    wikilinks_enabled: bool = Field(
+        default=True,
+        description="Enable [[wikilink]] resolution in notes: link summaries are appended to context",
+    )
+    wikilink_depth: int = Field(
+        default=1,
+        ge=0,
+        le=3,
+        description="Max depth to follow [[wikilinks]] when assembling context (0=disabled, 1=direct links only)",
     )
 
     # Heartbeat: daily journal summary and monthly compression
