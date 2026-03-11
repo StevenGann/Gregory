@@ -15,6 +15,7 @@ from gregory.api.schemas import ChatRequest, ChatResponse
 from gregory.config import get_settings
 from gregory.notes.loader import load_notes_for_chat
 from gregory.notes.service import NotesService
+from gregory.skills.base import get_registry
 from gregory.store import append, get_conversation_id, get_history
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
     """Send a message as the given user and receive Gregory's response.
 
     Loads notes and memory context, optionally uses model routing, tries providers
-    in order, runs tools (Wikipedia, web search, HA) if requested, persists journal
+    in order, runs skills (Wikipedia, web search, HA) if requested, persists journal
     entries and observations, then returns the cleaned response.
     """
     providers = await get_providers_for_message(body.message)
@@ -148,6 +149,7 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=400, detail="Invalid user_id")
 
     settings = get_settings()
+    registry = get_registry()
     notes_context = load_notes_for_chat(user_id)
 
     # Memory retrieval: vector-search for relevant past journal entries
@@ -171,10 +173,10 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         memory_context=memory_context,
         memory_enabled=settings.memory_enabled,
         wikipedia_context="",
-        wikipedia_enabled=settings.wikipedia_enabled,
-        web_search_enabled=settings.web_search_enabled,
+        skill_instructions=registry.build_instructions(),
         fact_check_strict=settings.fact_check_strict,
-        ha_enabled=settings.ha_enabled,
+        knowledge_enabled=settings.knowledge_enabled,
+        wikilinks_enabled=settings.wikilinks_enabled,
     )
 
     history = get_history(user_id)
@@ -213,8 +215,8 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
 
     # --- Memory marker extraction ---
     # Parse AI response for [JOURNAL:], [MEMORY_SEARCH:], [WIKIPEDIA:], [WEB_SEARCH:],
-    # and HA markers ([HA_LIST], [HA_FIND:], [HA_STATE:], [HA_SERVICE:]). Markers are
-    # stripped from the response; tool requests are processed below.
+    # HA markers ([HA_LIST], [HA_FIND:], [HA_STATE:], [HA_SERVICE:]), and [KNOWLEDGE:].
+    # Markers are stripped from the response; skill requests are processed below.
     (
         response_text,
         journal_entries,
@@ -225,6 +227,7 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         ha_find_reqs,
         ha_state_reqs,
         ha_service_reqs,
+        knowledge_entries,
     ) = extract_memory_markers(response_text)
 
     # --- HA pronoun resolution ---
@@ -241,277 +244,72 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
         ha_find_reqs = [HAFindRequest(query=device)]
         logger.info("[chat] Pronoun resolution: inferred device %r from history", device)
 
-    # --- Tool execution loop ---
-    # If AI requested Wikipedia, web search, or HA: run tools, build context from
-    # results, and perform a follow-up AI call so the user gets an immediate answer
-    # (rather than waiting for the next turn).
-    has_ha_tools = (
-        settings.ha_enabled
+    # --- Skill execution ---
+    # Run Wikipedia, web search, and HA if the AI requested them; build context from
+    # results, then perform a follow-up AI call for an immediate answer.
+    from gregory.skills.home_assistant import HomeAssistantSkill
+
+    ha_skill: HomeAssistantSkill | None = next(
+        (s for s in registry._skills if isinstance(s, HomeAssistantSkill) and s.enabled),
+        None,
+    )
+    has_ha_tools = bool(
+        ha_skill
         and settings.ha_base_url
         and settings.ha_access_token
         and (ha_list_reqs or ha_find_reqs or ha_state_reqs or ha_service_reqs)
     )
-    has_search_tools = (wikipedia_searches or web_searches) and successful_provider
-    if (
-        (has_search_tools and (settings.wikipedia_enabled or settings.web_search_enabled))
-        or has_ha_tools
-    ):
+    has_search_tools = bool(
+        (wikipedia_searches or web_searches)
+        and successful_provider
+        and any(s.enabled for s in registry._skills if s.name in ("wikipedia", "web_search"))
+    )
+
+    if has_search_tools or has_ha_tools:
         context_parts: list[str] = []
         instruction_parts: list[str] = []
 
         if has_ha_tools:
-            from gregory.tools.home_assistant import (
-                call_service,
-                find_entities,
-                format_ha_context,
-                get_state,
-                list_entities,
-                parse_service_params,
+            ha_result = await ha_skill.execute_batch(
+                base_url=settings.ha_base_url,
+                access_token=settings.ha_access_token,
+                ha_list_reqs=ha_list_reqs,
+                ha_find_reqs=ha_find_reqs,
+                ha_state_reqs=ha_state_reqs,
+                ha_service_reqs=ha_service_reqs,
+                message=body.message,
+                history=history,
+                infer_action_fn=_infer_ha_action,
+                extract_last_device_fn=_extract_last_device_from_history,
+                entity_id_to_query_fn=_entity_id_to_search_query,
             )
-
-            list_results: list[dict] = []
-            find_results: dict[str, list[dict]] = {}
-            find_fallbacks: dict[str, list[dict]] = {}
-            state_results: list[dict | None] = []
-            service_results: list[tuple[bool, str]] = []
-
-            for req in ha_find_reqs:
-                try:
-                    ents = await find_entities(
-                        settings.ha_base_url,
-                        settings.ha_access_token,
-                        req.query,
-                    )
-                    find_results[req.query] = ents
-                    if not ents:
-                        fallback = await list_entities(
-                            settings.ha_base_url,
-                            settings.ha_access_token,
-                            domain="light",
-                        )
-                        find_fallbacks[req.query] = fallback
-                except Exception as e:
-                    logger.warning("[chat] HA find_entities failed for %r: %s", req.query, e)
-                    find_results[req.query] = []
-
-            for req in ha_list_reqs:
-                try:
-                    ents = await list_entities(
-                        settings.ha_base_url,
-                        settings.ha_access_token,
-                        domain=req.domain,
-                    )
-                    list_results.extend(ents)
-                except Exception as e:
-                    logger.warning("[chat] HA list_entities failed: %s", e)
-
-            for req in ha_state_reqs:
-                try:
-                    state = await get_state(
-                        settings.ha_base_url,
-                        settings.ha_access_token,
-                        req.entity_id,
-                    )
-                    state_results.append(state)
-                except Exception as e:
-                    logger.warning("[chat] HA get_state failed for %s: %s", req.entity_id, e)
-                    state_results.append(None)
-
-            for req in ha_service_reqs:
-                parsed = parse_service_params(req.params_str)
-                if parsed:
-                    domain, service, data = parsed
-                    try:
-                        ok, msg = await call_service(
-                            settings.ha_base_url,
-                            settings.ha_access_token,
-                            domain,
-                            service,
-                            data,
-                        )
-                        service_results.append((ok, msg))
-                    except Exception as e:
-                        logger.warning("[chat] HA call_service failed: %s", e)
-                        service_results.append((False, str(e)))
-                else:
-                    service_results.append((False, f"Failed to parse: {req.params_str}"))
-
-            # HA_SERVICE failure fallback: AI used wrong entity_id, call failed. Retry via HA_FIND.
-            action = _infer_ha_action(body.message, history)
-            if ha_service_reqs and action:
-                for failed_idx, (ok, msg) in enumerate(service_results):
-                    if ok:
-                        continue
-                    err_msg = msg.lower()
-                    if "not found" not in err_msg and "404" not in err_msg and "entity" not in err_msg:
-                        continue
-                    if failed_idx >= len(ha_service_reqs):
-                        continue
-                    req = ha_service_reqs[failed_idx]
-                    parsed = parse_service_params(req.params_str)
-                    bad_entity_id = (
-                        parsed[2].get("entity_id")
-                        if parsed and isinstance(parsed[2].get("entity_id"), str)
-                        else None
-                    )
-                    if not bad_entity_id and parsed and isinstance(parsed[2].get("entity_id"), list):
-                        bad_entity_id = parsed[2]["entity_id"][0] if parsed[2]["entity_id"] else None
-                    device = _extract_last_device_from_history(history)
-                    if not device and bad_entity_id:
-                        device = _entity_id_to_search_query(bad_entity_id)
-                    if not device:
-                        continue
-                    try:
-                        ents = await find_entities(
-                            settings.ha_base_url,
-                            settings.ha_access_token,
-                            device,
-                        )
-                        if len(ents) == 1:
-                            ent = ents[0]
-                            entity_id = ent.get("entity_id")
-                            if entity_id and "." in entity_id:
-                                domain = entity_id.split(".", 1)[0]
-                                ok, msg = await call_service(
-                                    settings.ha_base_url,
-                                    settings.ha_access_token,
-                                    domain,
-                                    action,
-                                    {"entity_id": entity_id},
-                                )
-                                service_results[failed_idx] = (ok, msg)
-                                logger.info(
-                                    "[chat] HA_SERVICE fallback: retried with %s",
-                                    entity_id,
-                                )
-                    except Exception as e:
-                        logger.warning(
-                            "[chat] HA_SERVICE fallback failed for %r: %s",
-                            device,
-                            e,
-                        )
-
-            # HA_STATE 404 fallback: AI guessed entity_id (e.g. light.master_bedroom_table_lamp), got 404.
-            # Resolve via HA_FIND and auto-execute if we have turn intent.
-            action = _infer_ha_action(body.message, history)
-            if action and not ha_service_reqs:
-                for i, state in enumerate(state_results):
-                    if not state or state.get("error") != "not found":
-                        continue
-                    failed_entity_id = ha_state_reqs[i].entity_id if i < len(ha_state_reqs) else ""
-                    device = _extract_last_device_from_history(history)
-                    if not device and failed_entity_id:
-                        device = _entity_id_to_search_query(failed_entity_id)
-                    if not device:
-                        continue
-                    if device in find_results or any(
-                        r.query == device for r in ha_find_reqs
-                    ):
-                        continue
-                    try:
-                        ents = await find_entities(
-                            settings.ha_base_url,
-                            settings.ha_access_token,
-                            device,
-                        )
-                        if ents:
-                            ha_find_reqs.append(HAFindRequest(query=device))
-                            find_results[device] = ents
-                            logger.info(
-                                "[chat] HA_STATE 404 fallback: resolved %r via HA_FIND",
-                                device,
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            "[chat] HA_STATE 404 fallback find failed for %r: %s",
-                            device,
-                            e,
-                        )
-
-            # Auto-execute turn_on/turn_off when HA_FIND returns exactly one match and user intent is clear
-            if (
-                not ha_service_reqs
-                and len(ha_find_reqs) == 1
-                and (action := _infer_ha_action(body.message, history))
-            ):
-                req = ha_find_reqs[0]
-                ents = find_results.get(req.query, [])
-                if len(ents) == 1:
-                    ent = ents[0]
-                    entity_id = ent.get("entity_id")
-                    if entity_id and "." in entity_id:
-                        domain = entity_id.split(".", 1)[0]
-                        try:
-                            ok, msg = await call_service(
-                                settings.ha_base_url,
-                                settings.ha_access_token,
-                                domain,
-                                action,
-                                {"entity_id": entity_id},
-                            )
-                            service_results.append((ok, msg))
-                            logger.info(
-                                "[chat] HA auto-executed %s.%s for %s",
-                                domain,
-                                action,
-                                entity_id,
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                "[chat] HA auto-execute failed for %s: %s",
-                                entity_id,
-                                e,
-                            )
-                            service_results.append((False, str(e)))
-
-            ha_context = format_ha_context(
-                list_results,
-                state_results,
-                service_results,
-                find_results=find_results or None,
-                find_fallbacks=find_fallbacks or None,
-            )
-            if ha_context:
-                context_parts.append(ha_context)
+            if ha_result.content:
+                context_parts.append(ha_result.content)
                 instruction_parts.append("Home Assistant results")
 
-        if settings.wikipedia_enabled and wikipedia_searches:
-            from gregory.tools.wikipedia import format_wikipedia_context, search_wikipedia
+        # Wikipedia and web search via generic registry execution
+        wiki_skill = next((s for s in registry.get_enabled_skills() if s.name == "wikipedia"), None)
+        web_skill = next((s for s in registry.get_enabled_skills() if s.name == "web_search"), None)
 
-            all_wiki_results: list[dict] = []
+        if wiki_skill and wikipedia_searches:
             for req in wikipedia_searches:
                 try:
-                    results = await search_wikipedia(req.query, max_results=3)
-                    all_wiki_results.extend(results)
+                    result = await wiki_skill.execute(req.query)
+                    if result.content:
+                        context_parts.append(result.content)
+                        instruction_parts.append("Wikipedia search results")
                 except Exception as e:
-                    logger.warning("[chat] Wikipedia search failed for %r: %s", req.query, e)
+                    logger.warning("[chat] Wikipedia skill failed for %r: %s", req.query, e)
 
-            wiki_context = format_wikipedia_context(all_wiki_results)
-            if wiki_context:
-                context_parts.append(wiki_context)
-                instruction_parts.append("Wikipedia search results")
-            else:
-                context_parts.append("## Wikipedia search results\n\nNo results found.")
-                instruction_parts.append("Wikipedia search (no results)")
-
-        if settings.web_search_enabled and web_searches:
-            from gregory.tools.web_search import format_web_search_context, search_web
-
-            all_web_results: list[dict] = []
+        if web_skill and web_searches:
             for req in web_searches:
                 try:
-                    results = await search_web(req.query, max_results=5)
-                    all_web_results.extend(results)
+                    result = await web_skill.execute(req.query)
+                    if result.content:
+                        context_parts.append(result.content)
+                        instruction_parts.append("web search results")
                 except Exception as e:
-                    logger.warning("[chat] Web search failed for %r: %s", req.query, e)
-
-            web_context = format_web_search_context(all_web_results)
-            if web_context:
-                context_parts.append(web_context)
-                instruction_parts.append("web search results")
-            else:
-                context_parts.append("## Web search results\n\nNo results found.")
-                instruction_parts.append("web search (no results)")
+                    logger.warning("[chat] Web search skill failed for %r: %s", req.query, e)
 
         if context_parts:
             combined_context = "\n\n".join(context_parts)
@@ -555,6 +353,7 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                     ha_find_reqs,
                     ha_state_reqs,
                     ha_service_reqs,
+                    knowledge_entries,
                 ) = extract_memory_markers(response_text)
             except Exception as e:
                 logger.warning("[chat] Search follow-up call failed: %s", e)
@@ -576,6 +375,7 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
                             ha_find_reqs,
                             ha_state_reqs,
                             ha_service_reqs,
+                            knowledge_entries,
                         ) = extract_memory_markers(response_text)
                     except Exception as e2:
                         logger.warning(
@@ -615,6 +415,17 @@ async def chat(user_id: str, body: ChatRequest) -> ChatResponse:
             if all_results:
                 set_pending_memory_results(user_id, all_results)
                 logger.info("[chat] Stored %d memory search results for next turn", len(all_results))
+
+    # --- Knowledge entry persistence ---
+    # Write [KNOWLEDGE: title | content] entries to notes/knowledge/*.md
+    if settings.knowledge_enabled and knowledge_entries:
+        notes_svc_k = NotesService()
+        for entry in knowledge_entries:
+            try:
+                notes_svc_k.append_knowledge(entry.title, entry.content)
+                logger.info("[chat] Knowledge note updated: %s", entry.title)
+            except Exception as e:
+                logger.warning("[chat] Failed to write knowledge note %r: %s", entry.title, e)
 
     # --- Observation extraction ---
     # If observations_enabled: extract [OBSERVATION:], [GREGORY_NOTE:], etc. and

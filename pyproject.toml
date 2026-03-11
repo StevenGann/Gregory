@@ -18,6 +18,7 @@ dependencies = [
     "google-genai>=1.0.0",
     "chromadb>=0.6.0",
     "ddgs>=8.0.0",
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]

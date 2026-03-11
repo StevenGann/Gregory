@@ -21,6 +21,20 @@ async def lifespan(app: FastAPI):
     import asyncio
 
     from gregory.ollama_ensure import ensure_ollama_models
+    from gregory.skills.loader import build_registry
+
+    # Build skill registry (must happen before first chat request)
+    registry = build_registry()
+    logger.info("[startup] Skill registry initialized")
+
+    # Connect MCP servers and register their tools as skills
+    mcp_manager = None
+    mcp_server_configs = getattr(settings, "mcp_servers", [])
+    if mcp_server_configs:
+        from gregory.mcp.client import MCPClientManager
+        mcp_manager = MCPClientManager(mcp_server_configs, registry)
+        await mcp_manager.connect_all()
+        logger.info("[startup] MCP client manager connected")
 
     if getattr(settings, "ollama_ensure_models", False):
         asyncio.create_task(ensure_ollama_models())
@@ -39,6 +53,10 @@ async def lifespan(app: FastAPI):
         logger.info("[startup] Memory system enabled; reindexing journal files in background")
 
     yield
+
+    # Shutdown: close MCP connections
+    if mcp_manager:
+        await mcp_manager.close_all()
 
 
 logging.basicConfig(

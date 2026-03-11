@@ -46,6 +46,36 @@ MEMORY_SEARCH_INSTRUCTION = """
 To search your journal memory for something specific, add this at the end of your response:
 - [MEMORY_SEARCH: query] — search your memory; results will be available in your next response"""
 
+WIKILINK_INSTRUCTION = """
+## Note links (wikilinks)
+
+You can create links between notes using ``[[title]]`` syntax. When writing observations, journal entries, or knowledge notes, link to related notes to build a connected knowledge graph:
+- `[[Max the Dog]]` — links to the entity note for Max
+- `[[Quantum Computing Basics]]` — links to a knowledge note
+- `[[alice]]` — links to Alice's user notes
+- `[[household]]` — links to the household notes
+
+Linked notes are automatically summarized in your context so you have richer information. Use links when you mention something that has (or should have) its own note. Do not create links for every noun—only for things that merit their own note."""
+
+KNOWLEDGE_INSTRUCTION = """
+## Knowledge notes
+
+You have a knowledge base where you store substantive information learned from web searches, Wikipedia, or conversations. When you encounter important factual content worth preserving for future reference, save it:
+- [KNOWLEDGE: title | content] — create or update a knowledge note with the given title and content
+
+**When to use:**
+- After a Wikipedia or web search that surfaces facts you'll likely need again
+- When a user shares detailed technical or factual information
+- When you learn something specific about a topic that isn't captured in regular notes
+
+**When NOT to use:**
+- Routine conversational details (use [OBSERVATION:] instead)
+- Highly personal information about a user (use [OBSERVATION:] instead)
+
+**Examples:**
+- `[KNOWLEDGE: Hume MRT Station | Hume MRT station opened in 2026 on the Downtown Line. It serves the Bukit Timah area. Source: Wikipedia.]`
+- `[KNOWLEDGE: Sous Vide Cooking | Sous vide involves cooking food in a vacuum-sealed bag submerged in temperature-controlled water. Typical temperatures: 54°C for medium-rare steak (1-4 hours).]`"""
+
 WIKIPEDIA_INSTRUCTION = """
 ## Wikipedia verification (non-negotiable)
 
@@ -129,12 +159,22 @@ def build_system_prompt(
     memory_context: str = "",
     memory_enabled: bool = False,
     wikipedia_context: str = "",
+    # Legacy individual flags (still accepted for callers that haven't migrated)
     wikipedia_enabled: bool = False,
     web_search_enabled: bool = False,
     fact_check_strict: bool = False,
     ha_enabled: bool = False,
+    # Preferred: pass pre-built skill instruction block from the skill registry
+    skill_instructions: str = "",
+    knowledge_enabled: bool = False,
+    wikilinks_enabled: bool = False,
 ) -> str:
-    """Build system prompt with optional notes context, memory context, and instructions."""
+    """Build system prompt with optional notes context, memory context, and instructions.
+
+    Skill instructions are now sourced from the skill registry via ``skill_instructions``.
+    The legacy ``wikipedia_enabled``, ``web_search_enabled``, and ``ha_enabled`` flags are
+    still accepted so that callers that haven't migrated yet continue to work.
+    """
     base = get_settings().system_prompt or DEFAULT_SYSTEM_PROMPT
     if base and not base.strip():
         base = DEFAULT_SYSTEM_PROMPT
@@ -161,14 +201,27 @@ Address your response to them. Do not greet or speak to other family members, pe
     if memory_enabled:
         parts.append(JOURNAL_INSTRUCTION)
         parts.append(MEMORY_SEARCH_INSTRUCTION)
-    if wikipedia_enabled:
-        parts.append(WIKIPEDIA_INSTRUCTION)
-    if web_search_enabled:
-        parts.append(WEB_SEARCH_INSTRUCTION)
-    if ha_enabled:
-        parts.append(HA_INSTRUCTION)
-    if fact_check_strict and (wikipedia_enabled or web_search_enabled):
-        parts.append(FACT_CHECK_STRICT_INSTRUCTION)
+    if knowledge_enabled:
+        parts.append(KNOWLEDGE_INSTRUCTION)
+    if wikilinks_enabled:
+        parts.append(WIKILINK_INSTRUCTION)
+
+    if skill_instructions.strip():
+        # Preferred path: registry-assembled instructions
+        parts.append(skill_instructions)
+        if fact_check_strict:
+            parts.append(FACT_CHECK_STRICT_INSTRUCTION)
+    else:
+        # Legacy fallback for callers that pass individual flags
+        if wikipedia_enabled:
+            parts.append(WIKIPEDIA_INSTRUCTION)
+        if web_search_enabled:
+            parts.append(WEB_SEARCH_INSTRUCTION)
+        if ha_enabled:
+            parts.append(HA_INSTRUCTION)
+        if fact_check_strict and (wikipedia_enabled or web_search_enabled):
+            parts.append(FACT_CHECK_STRICT_INSTRUCTION)
+
     if wikipedia_context.strip():
         parts.append(wikipedia_context)
     return "\n\n".join(parts)
