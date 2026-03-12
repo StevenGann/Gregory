@@ -1,4 +1,17 @@
-"""Gregory - Smart House AI. FastAPI application entry."""
+"""Gregory - Smart House AI. FastAPI application entry point.
+
+This module creates the FastAPI application and manages the application
+lifespan. On startup it:
+  1. Builds the skill registry (Wikipedia, web search, Home Assistant, etc.)
+  2. Connects to any configured MCP servers and registers their tools
+  3. (Optionally) auto-pulls missing Ollama models in the background
+  4. (Optionally) starts the heartbeat background tasks (self-reflection,
+     notes cleanup, daily journal summary, monthly memory compression)
+  5. (Optionally) reindexes existing journal files into the ChromaDB vector
+     store so memory search is available immediately after restart
+
+On shutdown it tears down MCP server connections cleanly.
+"""
 
 import logging
 import sys
@@ -17,17 +30,27 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown."""
+    """Application lifespan: startup tasks run before ``yield``, shutdown after.
+
+    The order of startup operations matters:
+    - Skills must be registered before the first chat request arrives.
+    - MCP connections must be established after the skill registry exists.
+    - Heartbeat and memory tasks are non-blocking background tasks; they do
+      not delay startup even if they take time.
+    """
     import asyncio
 
     from gregory.ollama_ensure import ensure_ollama_models
     from gregory.skills.loader import build_registry
 
-    # Build skill registry (must happen before first chat request)
+    # Step 1: Build skill registry (Wikipedia, web search, Home Assistant, etc.)
+    # This populates the module-level singleton accessed by chat.py via get_registry().
     registry = build_registry()
     logger.info("[startup] Skill registry initialized")
 
-    # Connect MCP servers and register their tools as skills
+    # Step 2: Connect MCP servers and register their tools as additional skills.
+    # Each tool exposed by an MCP server is wrapped as an MCPSkill and added to
+    # the registry so the AI can invoke it via its marker syntax.
     mcp_manager = None
     mcp_server_configs = getattr(settings, "mcp_servers", [])
     if mcp_server_configs:
@@ -36,9 +59,13 @@ async def lifespan(app: FastAPI):
         await mcp_manager.connect_all()
         logger.info("[startup] MCP client manager connected")
 
+    # Step 3: (Optional) pull any missing Ollama models in the background.
+    # This runs asynchronously so it doesn't block the server from accepting requests.
     if getattr(settings, "ollama_ensure_models", False):
         asyncio.create_task(ensure_ollama_models())
 
+    # Step 4: (Optional) start heartbeat background tasks.
+    # Heartbeat tasks only start if at least one interval is configured (non-zero).
     reflection_m = getattr(settings, "heartbeat_reflection_minutes", 0) or 0
     cleanup_m = getattr(settings, "heartbeat_notes_cleanup_minutes", 0) or 0
     summary_m = getattr(settings, "heartbeat_daily_summary_minutes", 0) or 0
@@ -47,14 +74,17 @@ async def lifespan(app: FastAPI):
         from gregory.heartbeat import run_heartbeat
         asyncio.create_task(run_heartbeat())
 
+    # Step 5: (Optional) reindex journal files into ChromaDB on startup.
+    # Uses upsert so it is safe to run on every restart (idempotent).
+    # Runs as a background task to avoid blocking the server.
     if getattr(settings, "memory_enabled", False):
         from gregory.memory.service import startup_reindex
         asyncio.create_task(startup_reindex(), name="memory-reindex")
         logger.info("[startup] Memory system enabled; reindexing journal files in background")
 
-    yield
+    yield  # Application runs; requests are handled here
 
-    # Shutdown: close MCP connections
+    # Shutdown: cancel all MCP background session tasks cleanly
     if mcp_manager:
         await mcp_manager.close_all()
 
