@@ -1,12 +1,33 @@
-"""AI provider router - selects provider based on config."""
+"""AI provider router - selects and orders providers for each request.
+
+This module has two responsibilities:
+
+1. **Provider instantiation** — Converts ``ResolvedProvider`` config objects
+   (from ``ai/config.py``) into live ``AIProvider`` instances ready to call.
+
+2. **Per-message routing** — When ``model_routing_enabled`` is true, the
+   highest-priority model is consulted to pick the best provider for the
+   current message (see ``ai/selector.py``). The resulting list is always in
+   fallback order: if provider N fails, provider N+1 is tried automatically.
+
+The main entry point used by ``chat.py`` is ``get_providers_for_message()``.
+``get_providers_ordered()`` returns the raw config-ordered list without routing.
+"""
 
 import logging
 import re
 
 from gregory.ai.config import ResolvedProvider, resolve_providers_ordered
+from gregory.ai.providers.base import AIProvider
+from gregory.ai.providers.claude import ClaudeProvider
+from gregory.ai.providers.gemini import GeminiProvider
+from gregory.ai.providers.ollama import OllamaProvider
+from gregory.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Patterns used to detect short, simple messages that don't need intelligent
+# routing. Greetings and one-word responses are handled by any model.
 _SIMPLE_MESSAGE_PATTERNS = (
     r"^(hi|hey|hello|thanks|thank you|ok|okay|yes|no|bye|goodbye)[\.!?\s]*$",
     r"^[a-z]{1,20}$",
@@ -14,7 +35,12 @@ _SIMPLE_MESSAGE_PATTERNS = (
 
 
 def _is_simple_message(msg: str) -> bool:
-    """Return True if message is a short greeting/acknowledgment (skip model routing)."""
+    """Return True if message is a short greeting/acknowledgment (skip model routing).
+
+    When ``model_routing_skip_simple`` is enabled (default), simple messages
+    bypass the model selector to avoid the latency and cost of an extra AI call
+    just to route a "thanks" or "ok" response.
+    """
     m = msg.strip().lower()
     if len(m) > 50:
         return False
@@ -22,11 +48,6 @@ def _is_simple_message(msg: str) -> bool:
         if re.match(pat, m):
             return True
     return False
-from gregory.ai.providers.base import AIProvider
-from gregory.ai.providers.claude import ClaudeProvider
-from gregory.ai.providers.gemini import GeminiProvider
-from gregory.ai.providers.ollama import OllamaProvider
-from gregory.config import get_settings
 
 
 def _instantiate(r: ResolvedProvider) -> AIProvider | None:

@@ -1,18 +1,31 @@
-"""In-memory conversation history store. Per-user, single conversation each."""
+"""In-memory conversation history store. Per-user, single conversation each.
+
+Each user has a single ongoing conversation. History is held in memory only —
+it is lost when the Gregory process restarts. This is an intentional design
+choice for Phase 1: simplicity over persistence. Future phases may add
+database-backed persistence.
+
+The store is module-level (process-global) so it is shared across all request
+handlers within the same server process.
+"""
 
 from collections import defaultdict
 from datetime import datetime
 
 from gregory.ai.providers.base import ChatMessage
 
-# user_id -> list of ChatMessage
+# user_id -> list of ChatMessage (all messages for this user's session)
 _history: dict[str, list[ChatMessage]] = defaultdict(list)
-# user_id -> conversation_id (stable per user for Phase 1)
+
+# user_id -> conversation_id (stable UUID-like string for the lifetime of the process)
 _conversation_ids: dict[str, str] = {}
+
+# Simple incrementing counter used to generate unique conversation IDs
 _id_counter = 0
 
 
 def _next_id() -> str:
+    """Generate the next sequential conversation ID (e.g. 'conv_1', 'conv_2')."""
     global _id_counter
     _id_counter += 1
     return f"conv_{_id_counter}"
